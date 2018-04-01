@@ -1,0 +1,71 @@
+apply plugin: 'com.android.application'
+
+ext {
+    getCommandOutput = { String... params ->
+        def buffer = new ByteArrayOutputStream()
+        exec {
+            commandLine params
+            standardOutput = buffer
+        }
+        buffer.toString().trim()
+    }
+
+    getGitCommitCount = { ->
+        Integer.parseInt(getCommandOutput('git', 'rev-list', '--count', 'HEAD'))
+    }
+
+    getGitVersionDescription = { ->
+        getCommandOutput('git', 'describe', '--tags', '--dirty=+')
+                .replaceAll('^v', '')
+                .replaceAll('-g([0-9a-f]+)(\\+?)', '$2 ($1$2)')
+                .replaceAll('-', 'p')
+    }
+}
+
+android {
+    compileSdkVersion 25
+    buildToolsVersion "25.0.2"
+
+    defaultConfig {
+        applicationId "ca.zesty.fleetreceiver"
+        minSdkVersion 15
+        targetSdkVersion 25
+        //testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        //versionCode getGitCommitCount()
+        //versionName getGitVersionDescription()
+        versionCode 0
+        versionName "0.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:25.3.1'
+    //compile 'com.android.support:support-annotations:25.4.0'
+    testCompile 'junit:junit:4.12'
+    androidTestCompile 'junit:junit:4.12'
+    //androidTestCompile 'com.android.support.test:runner:1.0.1'
+}
+
+task copyDebugApk {
+    def version = android.defaultConfig.versionName.replaceAll(' .*', '')
+    def filename = 'fleetreceiver-' + version + '.apk'
+    doLast {
+        println ''
+        println 'Copying app-debug.apk to ' + filename
+        copy {
+            from 'build/outputs/apk/app-debug.apk'
+            into '../apks'
+            rename 'app-debug.apk', filename
+        }
+    }
+}
+
+assembleDebug.finalizedBy copyDebugApk
