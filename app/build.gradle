@@ -14,10 +14,15 @@ ext {
         Integer.parseInt(getCommandOutput('git', 'rev-list', '--count', 'HEAD'))
     }
 
+    // The "dirty" and "patch" indicators must both sort after ".", with the
+    // "dirty" indicator coming first.  Alas, all the punctuation characters
+    // after "." are special to the shell except ":", "=", "@", "^", "_", "~",
+    // which are mysterious or hard to pronounce.  So let's use "d" and "p".
     getGitVersionDescription = { ->
-        getCommandOutput('git', 'describe', '--tags', '--dirty=+')
+        getCommandOutput('git', 'describe', '--tags', '--dirty=@')
                 .replaceAll('^v', '')
-                .replaceAll('-g([0-9a-f]+)(\\+?)', '$2 ($1$2)')
+                .replaceAll('-g([0-9a-f]+)(@?)', '$2 ($1$2)')
+                .replaceAll('@', 'd')
                 .replaceAll('-', 'p')
     }
 }
@@ -50,10 +55,12 @@ dependencies {
     compile 'android.arch.persistence.room:runtime:1.0.0'
     compile 'android.arch.persistence.room:compiler:1.0.0'
     compile 'com.android.support:appcompat-v7:26.1.0'
-    //compile 'com.android.support:support-annotations:25.4.0'
+    compile 'com.android.support:cardview-v7:26.1.0'
     testCompile 'junit:junit:4.12'
     androidTestCompile 'junit:junit:4.12'
-    //androidTestCompile 'com.android.support.test:runner:1.0.1'
+    androidTestCompile 'com.android.support.test:runner:1.0.1', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    }
 }
 
 task copyDebugApk {

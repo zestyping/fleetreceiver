@@ -1,17 +1,12 @@
 package ca.zesty.fleetreceiver;
 
 import android.app.Notification;
-import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Service;
-import android.arch.persistence.room.Room;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.IBinder;
 import android.os.PowerManager;
-import android.support.annotation.Nullable;
 import android.support.v4.app.NotificationCompat;
 import android.telephony.SmsMessage;
 
@@ -19,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Watches for incoming SMS messages from Fleet Reporter instances. */
-public class ReceiverService extends Service {
+public class ReceiverService extends BaseService {
     static final String TAG = "LocationService";
     static final int NOTIFICATION_ID = 1;
     static final String ACTION_FLEET_RECEIVER_UPDATE_NOTIFICATION = "FLEET_RECEIVER_UPDATE_NOTIFICATION";
@@ -29,13 +24,10 @@ public class ReceiverService extends Service {
     private boolean mStarted = false;
     private PowerManager.WakeLock mWakeLock = null;
     private int mNumReceived = 0;
-    private AppDatabase mDb;
+    private AppDatabase mDb = AppDatabase.getDatabase(this);
 
     @Override public void onCreate() {
         super.onCreate();
-
-        mDb = Room.databaseBuilder(
-            getApplicationContext(), AppDatabase.class, "database").allowMainThreadQueries().build();
 
         registerReceiver(mSmsPointReceiver, Utils.getMaxPrioritySmsFilter());
         registerReceiver(mUpdateNotificationReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_UPDATE_NOTIFICATION));
@@ -46,7 +38,7 @@ public class ReceiverService extends Service {
         if (!mStarted) {
             // Grab the CPU.
             mStarted = true;
-            mWakeLock = getPowerManager().newWakeLock(
+            mWakeLock = u.getPowerManager().newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK, "LocationService");
             mWakeLock.acquire();
             startForeground(NOTIFICATION_ID, buildNotification());
@@ -61,12 +53,8 @@ public class ReceiverService extends Service {
         mStarted = false;
     }
 
-    @Nullable @Override public IBinder onBind(Intent intent) {
-        return null;
-    }
-
     private void updateNotification() {
-        getNotificationManager().notify(NOTIFICATION_ID, buildNotification());
+        u.getNotificationManager().notify(NOTIFICATION_ID, buildNotification());
     }
 
     /** Creates the notification to show while the service is running. */
@@ -79,7 +67,7 @@ public class ReceiverService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        String message = "Reporters activated: " +
+        String message = "Registered reporters: " +
             mDb.getReporterDao().getAllActive().size() +
             ".  Points received: " + mNumReceived + ".";
 
@@ -91,14 +79,6 @@ public class ReceiverService extends Service {
             .build();
     }
 
-    private NotificationManager getNotificationManager() {
-        return (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-    }
-
-    private PowerManager getPowerManager() {
-        return (PowerManager) getSystemService(Context.POWER_SERVICE);
-    }
-
     /** Handles incoming SMS messages for reported locations. */
     class SmsPointReceiver extends BroadcastReceiver {
         @Override public void onReceive(Context context, Intent intent) {
@@ -108,8 +88,9 @@ public class ReceiverService extends Service {
             String sender = sms.getDisplayOriginatingAddress();
             String body = sms.getMessageBody();
 
-            ReporterEntity reporter = mDb.getReporterDao().getByMobileNumber(sender);
-            if (reporter != null && reporter.activationTimeMillis != null) {
+            List<ReporterEntity> reporters = mDb.getReporterDao().getActiveByMobileNumber(sender);
+            if (reporters.size() == 1) {
+                ReporterEntity reporter = reporters.get(0);
                 List<PointEntity> points = new ArrayList<>();
                 for (String part : body.trim().split(" +")) {
                     PointEntity point = PointEntity.parse(reporter.reporterId, part);

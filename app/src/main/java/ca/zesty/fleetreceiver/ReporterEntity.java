@@ -11,13 +11,13 @@ public class ReporterEntity {
     @ColumnInfo(name = "reporter_id") public String reporterId;
     @ColumnInfo(name = "mobile_number") public String mobileNumber;
     @ColumnInfo(name = "label") public String label;
-    @ColumnInfo(name = "activation_time_millis") public Long activationTimeMillis;
+    @ColumnInfo(name = "activation_millis") public Long activationMillis;
 
     public ReporterEntity(
-        String reporterId, String mobileNumber, String label, Long activationTimeMillis) {
+        String reporterId, String mobileNumber, String label, Long activationMillis) {
         this.reporterId = reporterId;
         this.mobileNumber = mobileNumber;
         this.label = label;
-        this.activationTimeMillis = activationTimeMillis;
+        this.activationMillis = activationMillis;
     }
 }

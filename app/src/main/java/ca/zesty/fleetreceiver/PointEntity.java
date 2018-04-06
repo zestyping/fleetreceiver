@@ -29,7 +29,7 @@ public class PointEntity {
     /** Formats a point for readability and debugging. */
     public String toString() {
         String fix =  String.format(
-            Locale.US, "%s: (%+.5f, %+.5f, %+.0f m), %.1f m/s brg %.0f, sd=%.0f m",
+            Locale.US, "%s: (%+.5f, %+.5f, %+.0f m), %.0f km/h brg %.0f, sd=%.0f m",
             Utils.formatUtcTimeSeconds(time * 1000),
             latitude, longitude, altitude, speed, bearing, latLonSd
         );

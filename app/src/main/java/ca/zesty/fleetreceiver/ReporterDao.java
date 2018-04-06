@@ -13,21 +13,27 @@ public interface ReporterDao {
     @Query("select * from reporters")
     List<ReporterEntity> getAll();
 
-    @Query("select * from reporters where activation_time_millis is not null")
+    @Query("select * from reporters where activation_millis is not null order by activation_millis desc")
     List<ReporterEntity> getAllActive();
 
     @Query("select * from reporters where reporter_id = :reporterId")
     ReporterEntity get(String reporterId);
 
     @Query("select * from reporters where mobile_number = :mobileNumber")
-    ReporterEntity getByMobileNumber(String mobileNumber);
+    List<ReporterEntity> getByMobileNumber(String mobileNumber);
+
+    @Query("select * from reporters where mobile_number = :mobileNumber and activation_millis is not null")
+    List<ReporterEntity> getActiveByMobileNumber(String mobileNumber);
 
     @Insert
-    void insertAll(ReporterEntity... reporters);
+    void insert(ReporterEntity reporter);
+
+    @Insert
+    void insertAll(List<ReporterEntity> reporters);
 
     @Update
-    void update(ReporterEntity point);
+    void updateAll(List<ReporterEntity> reporters);
 
     @Delete
-    void delete(ReporterEntity reporter);
+    void deleteAll(List<ReporterEntity> reporters);
 }
