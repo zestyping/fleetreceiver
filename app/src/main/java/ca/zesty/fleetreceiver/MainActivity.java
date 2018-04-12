@@ -14,12 +14,15 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.TextView;
 
+import org.mapsforge.core.graphics.Bitmap;
+import org.mapsforge.core.model.LatLong;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
 import org.mapsforge.map.datastore.MapDataStore;
 import org.mapsforge.map.datastore.MultiMapDataStore;
 import org.mapsforge.map.layer.cache.TileCache;
+import org.mapsforge.map.layer.overlay.Marker;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
 import org.mapsforge.map.reader.MapFile;
 import org.mapsforge.map.rendertheme.InternalRenderTheme;
@@ -29,6 +32,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 
 public class MainActivity extends BaseActivity {
@@ -37,8 +42,10 @@ public class MainActivity extends BaseActivity {
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
+    private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
     private AppDatabase mDb = AppDatabase.getDatabase(this);
-    private MapView mapView;
+    private MapView mMapView;
+    private Map<String, Marker> mMarkers = new HashMap<>();
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,13 +63,15 @@ public class MainActivity extends BaseActivity {
         }, 0);
 
         AndroidGraphicFactory.createInstance(getApplication());
-        mapView = initializeMap(R.id.map);
+        mMapView = initializeMap(R.id.map);
+        updateMarkers();
         startService(new Intent(getApplicationContext(), ReceiverService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
+        registerReceiver(mPointsAddedReceiver, new IntentFilter(ReceiverService.ACTION_FLEET_RECEIVER_POINTS_ADDED));
     }
 
     @Override protected void onDestroy() {
-        mapView.destroyAll();
+        mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
         super.onDestroy();
     }
@@ -179,5 +188,29 @@ public class MainActivity extends BaseActivity {
         intent.putExtra(EXTRA_LOG_MESSAGE,
             Utils.formatUtcTimeSeconds(System.currentTimeMillis()) + " - " + message);
         context.sendBroadcast(intent);
+    }
+
+    class PointsAddedReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            updateMarkers();
+        }
+    }
+
+    void updateMarkers() {
+        Bitmap bitmap = AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker));
+        for (ReporterEntity.WithLatestPoint r : mDb.getReporterDao().getAllWithLatestPoints()) {
+            if (r.points == null || r.points.isEmpty()) continue;
+
+            PointEntity point = r.points.get(0);
+            LatLong position = new LatLong(point.latitude, point.longitude);
+            Marker m = mMarkers.get(r.reporter.reporterId);
+            if (m == null) {
+                m = new Marker(position, bitmap, 0, 0);
+                mMarkers.put(r.reporter.reporterId, m);
+                mMapView.addLayer(m);
+            } else {
+                m.setLatLong(position);
+            }
+        }
     }
 }

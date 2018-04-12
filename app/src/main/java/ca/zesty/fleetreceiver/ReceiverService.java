@@ -17,10 +17,10 @@ import java.util.List;
 public class ReceiverService extends BaseService {
     static final String TAG = "LocationService";
     static final int NOTIFICATION_ID = 1;
-    static final String ACTION_FLEET_RECEIVER_UPDATE_NOTIFICATION = "FLEET_RECEIVER_UPDATE_NOTIFICATION";
+    static final String ACTION_FLEET_RECEIVER_POINTS_ADDED = "FLEET_RECEIVER_POINTS_RECEIVED";
 
     private SmsPointReceiver mSmsPointReceiver = new SmsPointReceiver();
-    private UpdateNotificationReceiver mUpdateNotificationReceiver = new UpdateNotificationReceiver();
+    private ReporterRegisteredReceiver mReporterRegisteredReceiver = new ReporterRegisteredReceiver();
     private boolean mStarted = false;
     private PowerManager.WakeLock mWakeLock = null;
     private int mNumReceived = 0;
@@ -30,7 +30,9 @@ public class ReceiverService extends BaseService {
         super.onCreate();
 
         registerReceiver(mSmsPointReceiver, Utils.getMaxPrioritySmsFilter());
-        registerReceiver(mUpdateNotificationReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_UPDATE_NOTIFICATION));
+        registerReceiver(mReporterRegisteredReceiver, new IntentFilter(
+            RegistrationActivity.ACTION_FLEET_RECEIVER_REPORTER_REGISTERED
+        ));
     }
 
     /** Starts running the service. */
@@ -104,16 +106,22 @@ public class ReceiverService extends BaseService {
         }
 
         private void savePoints(ReporterEntity reporter, List<PointEntity> points) {
+            if (points.isEmpty()) return;
             mDb.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
             for (PointEntity point : points) {
                 MainActivity.postLogMessage(ReceiverService.this, reporter.label + ": " + point);
                 mNumReceived += 1;
             }
+
+            PointEntity latestPoint = mDb.getPointDao().getLatestPointForReporter(reporter.reporterId);
+            reporter.latestPointId = latestPoint.pointId;
+            mDb.getReporterDao().update(reporter);
             updateNotification();
+            sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_POINTS_ADDED));
         }
     }
 
-    class UpdateNotificationReceiver extends BroadcastReceiver {
+    class ReporterRegisteredReceiver extends BroadcastReceiver {
         @Override public void onReceive(Context context, Intent intent) {
             updateNotification();
         }

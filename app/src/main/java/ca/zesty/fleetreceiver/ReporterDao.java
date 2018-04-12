@@ -1,9 +1,9 @@
 package ca.zesty.fleetreceiver;
 
 import android.arch.persistence.room.Dao;
-import android.arch.persistence.room.Delete;
 import android.arch.persistence.room.Insert;
 import android.arch.persistence.room.Query;
+import android.arch.persistence.room.Transaction;
 import android.arch.persistence.room.Update;
 
 import java.util.List;
@@ -12,6 +12,9 @@ import java.util.List;
 public interface ReporterDao {
     @Query("select * from reporters")
     List<ReporterEntity> getAll();
+
+    @Query("select * from reporters") @Transaction
+    List<ReporterEntity.WithLatestPoint> getAllWithLatestPoints();
 
     @Query("select * from reporters where activation_millis is not null order by activation_millis desc")
     List<ReporterEntity> getAllActive();
@@ -28,12 +31,9 @@ public interface ReporterDao {
     @Insert
     void insert(ReporterEntity reporter);
 
-    @Insert
-    void insertAll(List<ReporterEntity> reporters);
+    @Update
+    void update(ReporterEntity reporter);
 
     @Update
     void updateAll(List<ReporterEntity> reporters);
-
-    @Delete
-    void deleteAll(List<ReporterEntity> reporters);
 }

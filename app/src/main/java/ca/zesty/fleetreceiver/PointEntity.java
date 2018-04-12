@@ -10,9 +10,10 @@ import java.util.regex.Pattern;
 
 @Entity(tableName = "points")
 public class PointEntity {
-    @PrimaryKey(autoGenerate = true) public long id;
+    @PrimaryKey(autoGenerate = true)
+    @ColumnInfo(name = "point_id") public long pointId;
     @ColumnInfo(name = "reporter_id") public String reporterId;
-    @ColumnInfo(name = "time") public long time;
+    @ColumnInfo(name = "time_millis") public long timeMillis;
     @ColumnInfo(name = "latitude") public double latitude;
     @ColumnInfo(name = "longitude") double longitude;
     @ColumnInfo(name = "altitude") public double altitude;
@@ -20,7 +21,7 @@ public class PointEntity {
     @ColumnInfo(name = "bearing") public double bearing;
     @ColumnInfo(name = "lat_lon_sd") public double latLonSd;
     @ColumnInfo(name = "type") public char type;
-    @ColumnInfo(name = "last_transition") public long lastTransition;
+    @ColumnInfo(name = "last_transition_millis") public long lastTransitionMillis;
 
     static final Pattern PATTERN_TYPE = Pattern.compile("(\\d+)([rmgs])");
 
@@ -30,13 +31,13 @@ public class PointEntity {
     public String toString() {
         String fix =  String.format(
             Locale.US, "%s: (%+.5f, %+.5f, %+.0f m), %.0f km/h brg %.0f, sd=%.0f m",
-            Utils.formatUtcTimeSeconds(time * 1000),
+            Utils.formatUtcTimeSeconds(timeMillis),
             latitude, longitude, altitude, speed, bearing, latLonSd
         );
 
         return String.format(Locale.US, "<%s, %s %d s%s>", fix,
             (type == 'r' || type == 'g') ? "rested" : "moved",
-            time - lastTransition,
+            (timeMillis - lastTransitionMillis) / 1000,
             type == 'g' ? ", go" : type == 's' ? ", stop" : ""
         );
     }
@@ -48,12 +49,13 @@ public class PointEntity {
         String[] parts = text.split(";");
         if (parts.length != 8) return null;
 
-        Long time = Utils.parseTimestamp(parts[0]);
-        if (time == null) return null;
-        point.time = time / 1000;
+        Long millis = Utils.parseTimestamp(parts[0]);
+        if (millis == null) return null;
+        point.timeMillis = millis;
 
         Matcher matcher = PATTERN_TYPE.matcher(parts[7]);
         if (!matcher.matches()) return null;
+        int secondsSinceTransition = Integer.parseInt(matcher.group(1));
         point.type = matcher.group(2).charAt(0);
         try {
             point.latitude = Double.parseDouble(parts[1]);
@@ -62,7 +64,7 @@ public class PointEntity {
             point.speed = Double.parseDouble(parts[4]);
             point.bearing = Double.parseDouble(parts[5]);
             point.latLonSd = Double.parseDouble(parts[6]);
-            point.lastTransition = point.time - Integer.parseInt(matcher.group(1));
+            point.lastTransitionMillis = point.timeMillis - secondsSinceTransition * 1000;
         } catch (NumberFormatException e) {
             return null;
         }

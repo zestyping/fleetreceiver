@@ -23,6 +23,7 @@ public class RegistrationActivity extends BaseActivity {
     static final String TAG = "RegistrationActivity";
     static final int MAX_LABEL_LENGTH = 20;
     static final int DISPLAY_UPDATE_MILLIS = 60 * 1000;
+    static final String ACTION_FLEET_RECEIVER_REPORTER_REGISTERED = "FLEET_RECEIVER_REPORTER_REGISTERED";
 
     private SmsRegistrationReceiver mSmsRegistrationReceiver = new SmsRegistrationReceiver();
     private AppDatabase mDb;
@@ -147,7 +148,7 @@ public class RegistrationActivity extends BaseActivity {
             }
             mDb.getReporterDao().updateAll(reporters);
             updateRegistrationTable();
-            sendBroadcast(new Intent(ReceiverService.ACTION_FLEET_RECEIVER_UPDATE_NOTIFICATION));
+            sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_REPORTER_REGISTERED));
         }
     }
 
