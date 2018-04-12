@@ -6,12 +6,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.ViewGroup;
 import android.widget.TextView;
 
 import org.mapsforge.core.graphics.Bitmap;
@@ -46,6 +48,7 @@ public class MainActivity extends BaseActivity {
     private AppDatabase mDb = AppDatabase.getDatabase(this);
     private MapView mMapView;
     private Map<String, Marker> mMarkers = new HashMap<>();
+    private Map<String, TextView> mLabels = new HashMap<>();
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -208,6 +211,20 @@ public class MainActivity extends BaseActivity {
                 m = new Marker(position, bitmap, 0, 0);
                 mMarkers.put(r.reporter.reporterId, m);
                 mMapView.addLayer(m);
+
+                TextView label = new TextView(this);
+                label.setTextColor(0xffffffff);
+                label.setText(r.reporter.label);
+                label.setTextSize(16);
+                label.setTypeface(Typeface.DEFAULT_BOLD);
+                label.setShadowLayer(12, 0, 0, 0xff000000);
+                label.setPadding(0, 12, 0, 0);
+                label.setLayoutParams(new MapView.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    position, MapView.LayoutParams.Alignment.TOP_CENTER
+                ));
+                mLabels.put(r.reporter.reporterId, label);
+                mMapView.addView(label);
             } else {
                 m.setLatLong(position);
             }
