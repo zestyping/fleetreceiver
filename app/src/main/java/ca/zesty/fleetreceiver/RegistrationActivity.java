@@ -33,6 +33,7 @@ public class RegistrationActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_registration);
         setTitle("Registration");
+        getSupportActionBar().setHomeButtonEnabled(true);
 
         mDb = Room.databaseBuilder(
             getApplicationContext(), AppDatabase.class, "database").allowMainThreadQueries().fallbackToDestructiveMigration().build();

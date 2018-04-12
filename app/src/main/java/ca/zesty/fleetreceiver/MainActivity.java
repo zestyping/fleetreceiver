@@ -56,8 +56,7 @@ public class MainActivity extends BaseActivity {
         }, 0);
 
         AndroidGraphicFactory.createInstance(getApplication());
-        initializeMap((MapView) findViewById(R.id.map));
-
+        mapView = initializeMap(R.id.map);
         startService(new Intent(getApplicationContext(), ReceiverService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
     }
@@ -90,10 +89,19 @@ public class MainActivity extends BaseActivity {
         if (item.getItemId() == R.id.action_registration) {
             startActivity(new Intent(this, RegistrationActivity.class));
         }
+        if (item.getItemId() == R.id.action_add_map_data) {
+            u.showMessageBox("Add map data",
+                "To add data to the map, please download any MapsForge file " +
+                "with a filename ending in \".map\" and leave it in your " +
+                "Download folder.\n\n" +
+                "This map will load and show the information from all the " +
+                "\".map\" files in your Download folder.");
+        }
         return false;
     }
 
-    void initializeMap(MapView mapView) {
+    MapView initializeMap(int id) {
+        MapView mapView = (MapView) findViewById(id);
         TileCache tileCache = AndroidUtil.createTileCache(this, "mapcache",
             mapView.getModel().displayModel.getTileSize(), 1f,
             mapView.getModel().frameBufferModel.getOverdrawFactor());
@@ -112,6 +120,7 @@ public class MainActivity extends BaseActivity {
         mapView.setClickable(true);
         mapView.getMapScaleBar().setVisible(true);
         mapView.setBuiltInZoomControls(true);
+        return mapView;
     }
 
     void addMapFilesInDir(MultiMapDataStore multiMap, File dir) {

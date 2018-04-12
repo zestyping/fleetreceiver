@@ -9,4 +9,10 @@
       android:id="@+id/action_registration"
       android:title="Register reporters"
       app:showAsAction="never"/>
+
+  <item
+      android:id="@+id/action_add_map_data"
+      android:title="Add map data"
+      app:showAsAction="never"/>
+
 </menu>
