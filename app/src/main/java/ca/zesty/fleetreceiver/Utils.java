@@ -142,11 +142,12 @@ public class Utils {
 
     // ==== CONTEXT-DEPENDENT ====
 
-    private Context context;
-    private Activity activity;
+    public final Context context;
+    public final Activity activity;
 
     public Utils(Context context) {
         this.context = context;
+        this.activity = null;
     }
 
     public Utils(Activity activity) {
@@ -220,6 +221,14 @@ public class Utils {
 
     public String getPref(String key, String defaultValue) {
         return getPrefs().getString(key, defaultValue);
+    }
+
+    public long getMinutePrefInMillis(String key, double defaultMinutes) {
+        double minutes = defaultMinutes;
+        try {
+            minutes = Double.valueOf(getPrefs().getString(key, "x"));
+        } catch (NumberFormatException e) { }
+        return Math.round(minutes * 60 * 1000);
     }
 
     public void setPref(String key, String value) {

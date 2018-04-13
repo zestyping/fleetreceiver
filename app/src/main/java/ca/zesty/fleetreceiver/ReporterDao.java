@@ -13,11 +13,11 @@ public interface ReporterDao {
     @Query("select * from reporters")
     List<ReporterEntity> getAll();
 
-    @Query("select * from reporters") @Transaction
-    List<ReporterEntity.WithLatestPoint> getAllWithLatestPoints();
-
     @Query("select * from reporters where activation_millis is not null order by activation_millis desc")
     List<ReporterEntity> getAllActive();
+
+    @Query("select * from reporters where activation_millis is not null order by activation_millis desc") @Transaction
+    List<ReporterEntity.WithLatestPoint> getAllActiveWithLatestPoints();
 
     @Query("select * from reporters where reporter_id = :reporterId")
     ReporterEntity get(String reporterId);

@@ -201,7 +201,7 @@ public class MainActivity extends BaseActivity {
 
     void updateMarkers() {
         Bitmap bitmap = AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker));
-        for (ReporterEntity.WithLatestPoint r : mDb.getReporterDao().getAllWithLatestPoints()) {
+        for (ReporterEntity.WithLatestPoint r : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
             if (r.points == null || r.points.isEmpty()) continue;
 
             PointEntity point = r.points.get(0);
