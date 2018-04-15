@@ -17,7 +17,7 @@ public class PointEntity {
     @ColumnInfo(name = "latitude") public double latitude;
     @ColumnInfo(name = "longitude") double longitude;
     @ColumnInfo(name = "altitude") public double altitude;
-    @ColumnInfo(name = "speed") public double speed;
+    @ColumnInfo(name = "speed_kmh") public double speedKmh;
     @ColumnInfo(name = "bearing") public double bearing;
     @ColumnInfo(name = "lat_lon_sd") public double latLonSd;
     @ColumnInfo(name = "type") public char type;
@@ -32,7 +32,7 @@ public class PointEntity {
         String fix =  String.format(
             Locale.US, "%s: (%+.5f, %+.5f, %+.0f m), %.0f km/h brg %.0f, sd=%.0f m",
             Utils.formatUtcTimeSeconds(timeMillis),
-            latitude, longitude, altitude, speed, bearing, latLonSd
+            latitude, longitude, altitude, speedKmh, bearing, latLonSd
         );
 
         return String.format(Locale.US, "<%s, %s %d s%s>", fix,
@@ -61,7 +61,7 @@ public class PointEntity {
             point.latitude = Double.parseDouble(parts[1]);
             point.longitude = Double.parseDouble(parts[2]);
             point.altitude = Double.parseDouble(parts[3]);
-            point.speed = Double.parseDouble(parts[4]);
+            point.speedKmh = Double.parseDouble(parts[4]);
             point.bearing = Double.parseDouble(parts[5]);
             point.latLonSd = Double.parseDouble(parts[6]);
             point.lastTransitionMillis = point.timeMillis - secondsSinceTransition * 1000;

@@ -5,7 +5,7 @@ import android.arch.persistence.room.Room;
 import android.arch.persistence.room.RoomDatabase;
 import android.content.Context;
 
-@Database(entities = {PointEntity.class, ReporterEntity.class}, exportSchema = false, version = 3)
+@Database(entities = {PointEntity.class, ReporterEntity.class}, exportSchema = false, version = 4)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract ReporterDao getReporterDao();
     public abstract PointDao getPointDao();
