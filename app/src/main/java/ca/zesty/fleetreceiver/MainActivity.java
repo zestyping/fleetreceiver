@@ -206,13 +206,18 @@ public class MainActivity extends BaseActivity {
 
             PointEntity point = r.points.get(0);
             LatLong position = new LatLong(point.latitude, point.longitude);
-            Marker m = mMarkers.get(r.reporter.reporterId);
-            if (m == null) {
-                m = new Marker(position, bitmap, 0, 0);
-                mMarkers.put(r.reporter.reporterId, m);
-                mMapView.addLayer(m);
+            Marker marker = mMarkers.get(r.reporter.reporterId);
+            if (marker == null) {
+                marker = new Marker(position, bitmap, 0, 0);
+                mMarkers.put(r.reporter.reporterId, marker);
+                mMapView.addLayer(marker);
+            } else {
+                marker.setLatLong(position);
+            }
 
-                TextView label = new TextView(this);
+            TextView label = mLabels.get(r.reporter.reporterId);
+            if (label == null) {
+                label = new TextView(this);
                 label.setTextColor(0xffffffff);
                 label.setText(r.reporter.label);
                 label.setTextSize(16);
@@ -226,8 +231,12 @@ public class MainActivity extends BaseActivity {
                 mLabels.put(r.reporter.reporterId, label);
                 mMapView.addView(label);
             } else {
-                m.setLatLong(position);
+                label.setLayoutParams(new MapView.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    position, MapView.LayoutParams.Alignment.TOP_CENTER
+                ));
             }
         }
+        mMapView.getLayerManager().redrawLayers();
     }
 }

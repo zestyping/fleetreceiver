@@ -51,6 +51,7 @@ public class ReceiverService extends BaseService {
     /** Cleans up when the service is about to stop. */
     @Override public void onDestroy() {
         unregisterReceiver(mSmsPointReceiver);
+        unregisterReceiver(mReporterRegisteredReceiver);
         if (mWakeLock != null) mWakeLock.release();
         mStarted = false;
     }

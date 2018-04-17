@@ -55,6 +55,7 @@ public class RegistrationActivity extends BaseActivity {
 
     @Override protected void onDestroy() {
         mHandler.removeCallbacks(mRunnable);
+        unregisterReceiver(mSmsRegistrationReceiver);
         super.onDestroy();
     }
 
