@@ -13,17 +13,114 @@
       android:layout_height="0dp"
       android:layout_weight="1" />
 
+  <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:layout_marginBottom="12dp">
+
+    <TableLayout
+        android:id="@+id/reporter_summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+      <TableRow>
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            android:text="Reporters registered"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            android:text="Reported in last hour"
+            android:textSize="16sp" />
+      </TableRow>
+
+      <TableRow>
+        <TextView
+            android:id="@+id/registered_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            tools:text="27"
+            android:textSize="25sp" />
+
+        <TextView
+            android:id="@+id/reported_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            tools:text="19"
+            android:textSize="25sp" />
+      </TableRow>
+    </TableLayout>
+
+    <TableLayout
+        android:id="@+id/reporter_details"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+      <TableRow>
+        <TextView
+            android:id="@+id/speed"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            tools:text="53 km/h"
+            android:textSize="25sp" />
+
+        <TextView
+            android:id="@+id/motion"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            tools:text="19 min"
+            android:textSize="25sp" />
+      </TableRow>
+
+      <TableRow>
+        <TextView
+            android:id="@+id/speed_details"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            android:text="as of 15 min ago"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/motion_details"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textAlignment="center"
+            android:text="since last stop"
+            android:textSize="16sp" />
+      </TableRow>
+    </TableLayout>
+
+  </FrameLayout>
+
   <TextView
       android:id="@+id/message_log"
       android:layout_width="match_parent"
       android:layout_height="64dp"
       android:paddingLeft="@dimen/activity_horizontal_margin"
       android:paddingRight="@dimen/activity_horizontal_margin"
-      android:layout_marginTop="6dp"
-      android:layout_marginBottom="6dp"
+      android:layout_marginTop="4dp"
+      android:layout_marginBottom="4dp"
       android:textSize="10dp"
       android:focusable="true"
       android:longClickable="true"
       android:textIsSelectable="true" />
-
 </LinearLayout>

@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 public class PointEntity {
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "point_id") public long pointId;
-    @ColumnInfo(name = "reporter_id") public String reporterId;
+    @ColumnInfo(name = "parent_reporter_id") public String reporterId;
     @ColumnInfo(name = "time_millis") public long timeMillis;
     @ColumnInfo(name = "latitude") public double latitude;
     @ColumnInfo(name = "longitude") double longitude;
@@ -26,6 +26,14 @@ public class PointEntity {
     static final Pattern PATTERN_TYPE = Pattern.compile("(\\d+)([rmgs])");
 
     public PointEntity() { }
+
+    public long getSegmentMillis() {
+        return timeMillis - lastTransitionMillis;
+    }
+
+    public boolean isResting() {
+        return type == 'r' || type == 's';
+    }
 
     /** Formats a point for readability and debugging. */
     public String toString() {

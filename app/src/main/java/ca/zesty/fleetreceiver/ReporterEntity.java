@@ -6,10 +6,7 @@ import android.arch.persistence.room.Entity;
 import android.arch.persistence.room.ForeignKey;
 import android.arch.persistence.room.Index;
 import android.arch.persistence.room.PrimaryKey;
-import android.arch.persistence.room.Relation;
 import android.support.annotation.NonNull;
-
-import java.util.List;
 
 @Entity(
     tableName = "reporters",
@@ -38,10 +35,8 @@ public class ReporterEntity {
         this.latestPointId = null;
     }
 
-    public static class WithLatestPoint {
+    public static class WithPoint {
         @Embedded public ReporterEntity reporter;
-        @Relation(
-            parentColumn = "latest_point_id", entityColumn = "point_id"
-        ) public List<PointEntity> points;
+        @Embedded public PointEntity point;
     }
 }

@@ -8,10 +8,10 @@ import java.util.List;
 
 @Dao
 public interface PointDao {
-    @Query("select * from points where reporter_id = :reporterId")
+    @Query("select * from points where parent_reporter_id = :reporterId")
     List<PointEntity> getAllForReporter(String reporterId);
 
-    @Query("select * from points where reporter_id = :reporterId order by time_millis desc limit 1")
+    @Query("select * from points where parent_reporter_id = :reporterId order by time_millis desc limit 1")
     PointEntity getLatestPointForReporter(String reporterId);
 
     @Insert

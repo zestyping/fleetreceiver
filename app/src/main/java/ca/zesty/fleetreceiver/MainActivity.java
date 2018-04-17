@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.view.Menu;
@@ -16,8 +17,8 @@ import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import org.mapsforge.core.graphics.Bitmap;
 import org.mapsforge.core.model.LatLong;
+import org.mapsforge.core.model.Point;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
@@ -42,6 +43,7 @@ public class MainActivity extends BaseActivity {
     static final String TAG = "MainActivity";
     static final String ACTION_FLEET_RECEIVER_LOG_MESSAGE = "FLEET_RECEIVER_LOG_MESSAGE";
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
+    static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
@@ -49,6 +51,10 @@ public class MainActivity extends BaseActivity {
     private MapView mMapView;
     private Map<String, Marker> mMarkers = new HashMap<>();
     private Map<String, TextView> mLabels = new HashMap<>();
+    private String mSelectedReporterId = null;
+    private Handler mHandler = null;
+    private Runnable mRunnable = null;
+    private Marker mSelectionMarker = null;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -67,10 +73,30 @@ public class MainActivity extends BaseActivity {
 
         AndroidGraphicFactory.createInstance(getApplication());
         mMapView = initializeMap(R.id.map);
-        updateMarkers();
         startService(new Intent(getApplicationContext(), ReceiverService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
         registerReceiver(mPointsAddedReceiver, new IntentFilter(ReceiverService.ACTION_FLEET_RECEIVER_POINTS_ADDED));
+
+        // Some elements of the display show elapsed time, so we need to
+        // periodically update the display even if there are no new events.
+        mHandler = new Handler();
+        mRunnable = new Runnable() {
+            public void run() {
+                updateMarkers();
+                updateReporterFrame();
+                mHandler.postDelayed(mRunnable, DISPLAY_INTERVAL_MILLIS);
+            }
+        };
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        mHandler.postDelayed(mRunnable, 0);
+    }
+
+    @Override protected void onPause() {
+        mHandler.removeCallbacks(mRunnable);
+        super.onPause();
     }
 
     @Override protected void onDestroy() {
@@ -196,30 +222,32 @@ public class MainActivity extends BaseActivity {
     class PointsAddedReceiver extends BroadcastReceiver {
         @Override public void onReceive(Context context, Intent intent) {
             updateMarkers();
+            updateReporterFrame();
         }
     }
 
     void updateMarkers() {
-        Bitmap bitmap = AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker));
-        for (ReporterEntity.WithLatestPoint r : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
-            if (r.points == null || r.points.isEmpty()) continue;
+        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
+            if (rp.point == null) continue;
 
-            PointEntity point = r.points.get(0);
-            LatLong position = new LatLong(point.latitude, point.longitude);
-            Marker marker = mMarkers.get(r.reporter.reporterId);
+            LatLong position = new LatLong(rp.point.latitude, rp.point.longitude);
+            Marker marker = mMarkers.get(rp.reporter.reporterId);
             if (marker == null) {
-                marker = new Marker(position, bitmap, 0, 0);
-                mMarkers.put(r.reporter.reporterId, marker);
+                marker = new ReporterMarker(rp.reporter.reporterId, position);
+                mMarkers.put(rp.reporter.reporterId, marker);
                 mMapView.addLayer(marker);
             } else {
                 marker.setLatLong(position);
+                if (rp.reporter.reporterId.equals(mSelectedReporterId)) {
+                    mSelectionMarker.setLatLong(position);
+                }
             }
 
-            TextView label = mLabels.get(r.reporter.reporterId);
+            TextView label = mLabels.get(rp.reporter.reporterId);
             if (label == null) {
                 label = new TextView(this);
                 label.setTextColor(0xffffffff);
-                label.setText(r.reporter.label);
+                label.setText(rp.reporter.label);
                 label.setTextSize(16);
                 label.setTypeface(Typeface.DEFAULT_BOLD);
                 label.setShadowLayer(12, 0, 0, 0xff000000);
@@ -228,7 +256,7 @@ public class MainActivity extends BaseActivity {
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                     position, MapView.LayoutParams.Alignment.TOP_CENTER
                 ));
-                mLabels.put(r.reporter.reporterId, label);
+                mLabels.put(rp.reporter.reporterId, label);
                 mMapView.addView(label);
             } else {
                 label.setLayoutParams(new MapView.LayoutParams(
@@ -238,5 +266,63 @@ public class MainActivity extends BaseActivity {
             }
         }
         mMapView.getLayerManager().redrawLayers();
+    }
+
+    void toggleSelectReporter(String reporterId) {
+        if (reporterId.equals(mSelectedReporterId)) {
+            mSelectedReporterId = null;
+            if (mSelectionMarker != null) {
+                mMapView.getLayerManager().getLayers().remove(mSelectionMarker);
+            }
+        } else {
+            mSelectedReporterId = reporterId;
+            if (mSelectionMarker == null) {
+                mSelectionMarker = new Marker(
+                    mMarkers.get(reporterId).getPosition(),
+                    AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.select)),
+                    0, 0);
+            }
+            mSelectionMarker.setLatLong(mMarkers.get(reporterId).getPosition());
+            mMapView.addLayer(mSelectionMarker);
+        }
+        updateReporterFrame();
+    }
+
+    void updateReporterFrame() {
+        if (mSelectedReporterId == null) {
+            u.showFrameChild(R.id.reporter_summary);
+            u.setText(R.id.registered_count, "" + mDb.getReporterDao().getAllActive().size());
+            long oneHourAgo = System.currentTimeMillis() - 60 * 60 * 1000;
+            u.setText(R.id.reported_count, "" + mDb.getReporterDao().getAllReportedSince(oneHourAgo).size());
+        } else {
+            u.showFrameChild(R.id.reporter_details);
+            ReporterEntity r = mDb.getReporterDao().get(mSelectedReporterId);
+            PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
+            int motionColor = p.isResting() ? 0xffe04020 : 0xff00a020;
+            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh, motionColor));
+            u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
+            u.setText(R.id.motion, Utils.describePeriod(p.getSegmentMillis()), motionColor);
+            u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "since last stop");
+        }
+    }
+
+    class ReporterMarker extends Marker {
+        private String mReporterId;
+        private double mTapRadius;
+
+        ReporterMarker(String mReporterId, LatLong position) {
+            super(position, AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker)), 0, 0);
+            this.mReporterId = mReporterId;
+            this.mTapRadius = getBitmap().getWidth() * 0.6;
+        }
+
+        public boolean onTap(LatLong tap, Point layerPoint, Point tapPoint) {
+            if (Math.abs(layerPoint.x - tapPoint.x) < mTapRadius &&
+                Math.abs(layerPoint.y - tapPoint.y) < mTapRadius) {
+                toggleSelectReporter(mReporterId);
+                return true;
+            }
+            return false;
+        }
     }
 }
