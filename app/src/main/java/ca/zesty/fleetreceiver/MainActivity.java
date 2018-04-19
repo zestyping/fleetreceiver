@@ -49,7 +49,7 @@ public class MainActivity extends BaseActivity {
     static final String ACTION_FLEET_RECEIVER_LOG_MESSAGE = "FLEET_RECEIVER_LOG_MESSAGE";
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
     static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
-    static final int MAX_AUTO_ZOOM_LEVEL = 14;
+    static final int MAX_ZOOM_IN_LEVEL = 14;
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
@@ -151,11 +151,11 @@ public class MainActivity extends BaseActivity {
     }
 
     MapView initializeMap(int id) {
-        MapView mapView = (MapView) findViewById(id);
+        final MapView mapView = (MapView) findViewById(id);
         TileCache tileCache = AndroidUtil.createTileCache(this, "mapcache",
             mapView.getModel().displayModel.getTileSize(), 1f,
             mapView.getModel().frameBufferModel.getOverdrawFactor());
-        MultiMapDataStore multiMap = new MultiMapDataStore(
+        final MultiMapDataStore multiMap = new MultiMapDataStore(
             MultiMapDataStore.DataPolicy.RETURN_ALL);
         addMapFile(multiMap, getAssetFile("world.map"));
         addMapFilesInDir(multiMap, Environment.getExternalStoragePublicDirectory(
@@ -164,18 +164,18 @@ public class MainActivity extends BaseActivity {
             mapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
         tileRendererLayer.setXmlRenderTheme(InternalRenderTheme.DEFAULT);
 
-        List<LatLong> positions = new ArrayList<>();
-        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
-            if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
-        }
-        if (!zoomToAllPoints(mapView)) {
-            mapView.setCenter(multiMap.startPosition());
-            mapView.setZoomLevel(multiMap.startZoomLevel());
-        }
         mapView.getLayerManager().getLayers().add(tileRendererLayer);
         mapView.setClickable(true);
         mapView.getMapScaleBar().setVisible(true);
         mapView.setBuiltInZoomControls(true);
+        mapView.post(new Runnable() {
+            @Override public void run() {
+                if (!zoomToAllPoints(mapView)) {
+                    mapView.setCenter(multiMap.startPosition());
+                    mapView.setZoomLevel(multiMap.startZoomLevel());
+                }
+            }
+        });
         return mapView;
     }
 
@@ -229,9 +229,14 @@ public class MainActivity extends BaseActivity {
         if (positions.size() > 0) {
             BoundingBox bounds = new BoundingBox(positions);
             mapView.setCenter(bounds.getCenterPoint());
-            mapView.setZoomLevel(positions.size() == 1 ? MAX_AUTO_ZOOM_LEVEL :
-                (byte) Math.min(MAX_AUTO_ZOOM_LEVEL, LatLongUtils.zoomForBounds(
-                    mapView.getDimension(), bounds, mapView.getModel().displayModel.getTileSize()
+            int zoomLevel = mapView.getModel().mapViewPosition.getZoomLevel();
+            int tileSize = mapView.getModel().displayModel.getTileSize();
+            // The idea of zoomLimit is to avoid zooming in past MAX_ZOOM_IN_LEVEL,
+            // but if already zoomed in beyond that, avoid needlessly zooming out.
+            int zoomLimit = Math.max(zoomLevel, MAX_ZOOM_IN_LEVEL);
+            mapView.setZoomLevel(positions.size() == 1 ? (byte) zoomLimit :
+                (byte) Math.min(zoomLimit, LatLongUtils.zoomForBounds(
+                    mapView.getDimension(), bounds, tileSize
                 ))
             );
             return true;
