@@ -70,9 +70,12 @@ public class ReceiverService extends BaseService {
         PendingIntent pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        String message = "Registered reporters: " +
-            mDb.getReporterDao().getAllActive().size() +
-            ".  Points received: " + mNumReceived + ".";
+        int registeredCount = mDb.getReporterDao().getAllActive().size();
+        long oneHourAgo = System.currentTimeMillis() - 60 * 60 * 1000;
+        int reportedCount = mDb.getReporterDao().getAllReportedSince(oneHourAgo).size();
+
+        String message = "Reporters registered: " + registeredCount +
+            ".  Reported in last hour: " + reportedCount + ".";
 
         return new NotificationCompat.Builder(this)
             .setContentTitle("Fleet Receiver")

@@ -7,11 +7,28 @@
     android:orientation="vertical"
     tools:context="ca.zesty.fleetreceiver.MainActivity">
 
-  <org.mapsforge.map.android.view.MapView
-      android:id="@+id/map"
+  <RelativeLayout
       android:layout_width="match_parent"
       android:layout_height="0dp"
-      android:layout_weight="1" />
+      android:layout_weight="1">
+
+    <org.mapsforge.map.android.view.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <ImageButton
+        android:id="@+id/zoom_points"
+        android:src="@drawable/zoom_points"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:layout_marginRight="12dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentRight="true"
+        android:stateListAnimator="@animator/button_state_list_animator" />
+
+  </RelativeLayout>
 
   <FrameLayout
       android:layout_width="match_parent"

@@ -14,11 +14,14 @@ import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import org.mapsforge.core.model.BoundingBox;
 import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.Point;
+import org.mapsforge.core.util.LatLongUtils;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
@@ -35,7 +38,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 
@@ -44,6 +49,7 @@ public class MainActivity extends BaseActivity {
     static final String ACTION_FLEET_RECEIVER_LOG_MESSAGE = "FLEET_RECEIVER_LOG_MESSAGE";
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
     static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
+    static final int MAX_AUTO_ZOOM_LEVEL = 14;
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
@@ -76,6 +82,12 @@ public class MainActivity extends BaseActivity {
         startService(new Intent(getApplicationContext(), ReceiverService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
         registerReceiver(mPointsAddedReceiver, new IntentFilter(ReceiverService.ACTION_FLEET_RECEIVER_POINTS_ADDED));
+
+        findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                zoomToAllPoints(mMapView);
+            }
+        });
 
         // Some elements of the display show elapsed time, so we need to
         // periodically update the display even if there are no new events.
@@ -152,9 +164,15 @@ public class MainActivity extends BaseActivity {
             mapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
         tileRendererLayer.setXmlRenderTheme(InternalRenderTheme.DEFAULT);
 
+        List<LatLong> positions = new ArrayList<>();
+        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
+            if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
+        }
+        if (!zoomToAllPoints(mapView)) {
+            mapView.setCenter(multiMap.startPosition());
+            mapView.setZoomLevel(multiMap.startZoomLevel());
+        }
         mapView.getLayerManager().getLayers().add(tileRendererLayer);
-        mapView.setCenter(multiMap.startPosition());
-        mapView.setZoomLevel(multiMap.startZoomLevel());
         mapView.setClickable(true);
         mapView.getMapScaleBar().setVisible(true);
         mapView.setBuiltInZoomControls(true);
@@ -201,6 +219,24 @@ public class MainActivity extends BaseActivity {
             }
         }
         return destination;
+    }
+
+    boolean zoomToAllPoints(MapView mapView) {
+        List<LatLong> positions = new ArrayList<>();
+        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
+            if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
+        }
+        if (positions.size() > 0) {
+            BoundingBox bounds = new BoundingBox(positions);
+            mapView.setCenter(bounds.getCenterPoint());
+            mapView.setZoomLevel(positions.size() == 1 ? MAX_AUTO_ZOOM_LEVEL :
+                (byte) Math.min(MAX_AUTO_ZOOM_LEVEL, LatLongUtils.zoomForBounds(
+                    mapView.getDimension(), bounds, mapView.getModel().displayModel.getTileSize()
+                ))
+            );
+            return true;
+        }
+        return false;
     }
 
     class LogMessageReceiver extends BroadcastReceiver {
