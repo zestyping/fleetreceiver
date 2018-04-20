@@ -30,8 +30,10 @@ import org.mapsforge.map.datastore.MultiMapDataStore;
 import org.mapsforge.map.layer.cache.TileCache;
 import org.mapsforge.map.layer.overlay.Marker;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
+import org.mapsforge.map.model.MapViewPosition;
 import org.mapsforge.map.reader.MapFile;
 import org.mapsforge.map.rendertheme.InternalRenderTheme;
+import org.mapsforge.map.util.MapViewProjection;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -168,6 +170,16 @@ public class MainActivity extends BaseActivity {
         mapView.setClickable(true);
         mapView.getMapScaleBar().setVisible(true);
         mapView.setBuiltInZoomControls(true);
+        mapView.getMapZoomControls().getChildAt(0).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                zoom(-1);
+            }
+        });
+        mapView.getMapZoomControls().getChildAt(1).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                zoom(1);
+            }
+        });
         mapView.post(new Runnable() {
             @Override public void run() {
                 if (!zoomToAllPoints(mapView)) {
@@ -315,16 +327,22 @@ public class MainActivity extends BaseActivity {
             if (mSelectionMarker != null) {
                 mMapView.getLayerManager().getLayers().remove(mSelectionMarker);
             }
+            mMapView.getModel().mapViewPosition.setPivot(null);
         } else {
             mSelectedReporterId = reporterId;
+            LatLong position = mMarkers.get(reporterId).getPosition();
             if (mSelectionMarker == null) {
                 mSelectionMarker = new Marker(
-                    mMarkers.get(reporterId).getPosition(),
+                    position,
                     AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.select)),
                     0, 0);
             }
-            mSelectionMarker.setLatLong(mMarkers.get(reporterId).getPosition());
-            mMapView.addLayer(mSelectionMarker);
+            mSelectionMarker.setLatLong(position);
+            mMapView.getModel().mapViewPosition.setPivot(position);
+            // MapView.addLayer is stupid and will crash if we re-add an existing layer.
+            if (!mMapView.getLayerManager().getLayers().contains(mSelectionMarker)) {
+                mMapView.addLayer(mSelectionMarker);
+            }
         }
         updateReporterFrame();
     }
@@ -347,6 +365,29 @@ public class MainActivity extends BaseActivity {
         }
     }
 
+    /** Zooms the map while holding the selected marker in a fixed position. */
+    void zoom(int change) {
+        MapViewPosition pos = mMapView.getModel().mapViewPosition;
+        byte zoom = pos.getZoomLevel();
+        byte newZoom = (byte) (zoom + change);
+        if (newZoom < pos.getZoomLevelMin()) newZoom = pos.getZoomLevelMin();
+        if (newZoom > pos.getZoomLevelMax()) newZoom = pos.getZoomLevelMax();
+        change = newZoom - zoom;
+
+        Marker marker = mMarkers.get(mSelectedReporterId);
+        if (marker == null) {
+            pos.setZoomLevel(newZoom, true);
+            return;
+        }
+        MapViewProjection proj = mMapView.getMapViewProjection();
+        Point centerPoint = proj.toPixels(pos.getCenter());
+        Point pivotPoint = proj.toPixels(marker.getLatLong());
+        double dx = centerPoint.x - pivotPoint.x;
+        double dy = centerPoint.y - pivotPoint.y;
+        double factor = 1 - Math.pow(0.5, change);
+        pos.moveCenterAndZoom(dx * factor, dy * factor, (byte) change, false);
+    }
+
     class ReporterMarker extends Marker {
         private String mReporterId;
         private double mTapRadius;
@@ -354,7 +395,7 @@ public class MainActivity extends BaseActivity {
         ReporterMarker(String mReporterId, LatLong position) {
             super(position, AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker)), 0, 0);
             this.mReporterId = mReporterId;
-            this.mTapRadius = getBitmap().getWidth() * 0.6;
+            this.mTapRadius = getBitmap().getWidth() * 0.8;
         }
 
         public boolean onTap(LatLong tap, Point layerPoint, Point tapPoint) {
