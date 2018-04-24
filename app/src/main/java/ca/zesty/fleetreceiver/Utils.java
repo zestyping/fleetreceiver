@@ -205,6 +205,7 @@ public class Utils {
         } else {
             number = getTelephonyManager().getLine1Number();
         }
+        if (number == null) return null;
         return "+" + number.replaceAll("^\\+*", "");
     }
 

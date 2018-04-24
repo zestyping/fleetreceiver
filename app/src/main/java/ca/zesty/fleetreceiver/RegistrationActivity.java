@@ -40,7 +40,13 @@ public class RegistrationActivity extends BaseActivity {
             getApplicationContext(), AppDatabase.class, "database").allowMainThreadQueries().fallbackToDestructiveMigration().build();
         updateRegistrationTable();
 
-        u.setText(R.id.receiver_number, u.getSmsNumber());
+        if (u.getSmsNumber() == null) {
+            u.setText(R.id.registration_status, "Now accepting registrations.");
+            u.hide(R.id.receiver_number);
+        } else {
+            u.setText(R.id.registration_status, "Now accepting registrations:");
+            u.setText(R.id.receiver_number, u.getSmsNumber());
+        }
         registerReceiver(mSmsRegistrationReceiver, Utils.getMaxPrioritySmsFilter());
 
         mHandler = new Handler();

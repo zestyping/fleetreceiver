@@ -24,6 +24,7 @@
         android:orientation="vertical">
 
       <TextView
+          android:id="@+id/registration_status"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:text="Now accepting registrations:"
