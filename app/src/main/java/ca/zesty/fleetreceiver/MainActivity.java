@@ -23,6 +23,7 @@ import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.Point;
 import org.mapsforge.core.util.LatLongUtils;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
+import org.mapsforge.map.android.util.AndroidPreferences;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
 import org.mapsforge.map.datastore.MapDataStore;
@@ -31,6 +32,7 @@ import org.mapsforge.map.layer.cache.TileCache;
 import org.mapsforge.map.layer.overlay.Marker;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
 import org.mapsforge.map.model.MapViewPosition;
+import org.mapsforge.map.model.common.PreferencesFacade;
 import org.mapsforge.map.reader.MapFile;
 import org.mapsforge.map.rendertheme.InternalRenderTheme;
 import org.mapsforge.map.util.MapViewProjection;
@@ -80,14 +82,15 @@ public class MainActivity extends BaseActivity {
         }, 0);
 
         AndroidGraphicFactory.createInstance(getApplication());
-        mMapView = initializeMap(R.id.map);
+        mMapView = (MapView) findViewById(R.id.map);
+        initializeMap();
         startService(new Intent(getApplicationContext(), ReceiverService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
         registerReceiver(mPointsAddedReceiver, new IntentFilter(ReceiverService.ACTION_FLEET_RECEIVER_POINTS_ADDED));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                zoomToAllPoints(mMapView);
+                zoomToAllPoints();
             }
         });
 
@@ -114,6 +117,7 @@ public class MainActivity extends BaseActivity {
     }
 
     @Override protected void onDestroy() {
+        saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
         super.onDestroy();
@@ -152,43 +156,43 @@ public class MainActivity extends BaseActivity {
         return false;
     }
 
-    MapView initializeMap(int id) {
-        final MapView mapView = (MapView) findViewById(id);
+    void initializeMap() {
         TileCache tileCache = AndroidUtil.createTileCache(this, "mapcache",
-            mapView.getModel().displayModel.getTileSize(), 1f,
-            mapView.getModel().frameBufferModel.getOverdrawFactor());
+            mMapView.getModel().displayModel.getTileSize(), 1f,
+            mMapView.getModel().frameBufferModel.getOverdrawFactor());
         final MultiMapDataStore multiMap = new MultiMapDataStore(
             MultiMapDataStore.DataPolicy.RETURN_ALL);
         addMapFile(multiMap, getAssetFile("world.map"));
         addMapFilesInDir(multiMap, Environment.getExternalStoragePublicDirectory(
             Environment.DIRECTORY_DOWNLOADS));
         TileRendererLayer tileRendererLayer = new TileRendererLayer(tileCache, multiMap,
-            mapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
+            mMapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
         tileRendererLayer.setXmlRenderTheme(InternalRenderTheme.DEFAULT);
 
-        mapView.getLayerManager().getLayers().add(tileRendererLayer);
-        mapView.setClickable(true);
-        mapView.getMapScaleBar().setVisible(true);
-        mapView.setBuiltInZoomControls(true);
-        mapView.getMapZoomControls().getChildAt(0).setOnClickListener(new View.OnClickListener() {
+        mMapView.getLayerManager().getLayers().add(tileRendererLayer);
+        mMapView.setClickable(true);
+        mMapView.getMapScaleBar().setVisible(true);
+        mMapView.setBuiltInZoomControls(true);
+        mMapView.getMapZoomControls().getChildAt(0).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 zoom(-1);
             }
         });
-        mapView.getMapZoomControls().getChildAt(1).setOnClickListener(new View.OnClickListener() {
+        mMapView.getMapZoomControls().getChildAt(1).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 zoom(1);
             }
         });
-        mapView.post(new Runnable() {
+        mMapView.post(new Runnable() {
             @Override public void run() {
-                if (!zoomToAllPoints(mapView)) {
-                    mapView.setCenter(multiMap.startPosition());
-                    mapView.setZoomLevel(multiMap.startZoomLevel());
+                if (!restoreMapViewPosition()) {
+                    if (!zoomToAllPoints()) {
+                        mMapView.setCenter(multiMap.startPosition());
+                        mMapView.setZoomLevel(multiMap.startZoomLevel());
+                    }
                 }
             }
         });
-        return mapView;
     }
 
     void addMapFilesInDir(MultiMapDataStore multiMap, File dir) {
@@ -233,22 +237,36 @@ public class MainActivity extends BaseActivity {
         return destination;
     }
 
-    boolean zoomToAllPoints(MapView mapView) {
+    void saveMapViewPosition() {
+        PreferencesFacade facade = new AndroidPreferences(u.getPrefs());
+        mMapView.getModel().mapViewPosition.save(facade);
+        facade.save();
+    }
+
+    boolean restoreMapViewPosition() {
+        MapViewPosition mvp = mMapView.getModel().mapViewPosition;
+        mvp.init(new AndroidPreferences(u.getPrefs()));
+        return !(mvp.getCenter().latitude == 0 &&
+                 mvp.getCenter().longitude == 0 &&
+                 mvp.getZoomLevel() == 0);
+    }
+
+    boolean zoomToAllPoints() {
         List<LatLong> positions = new ArrayList<>();
         for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
             if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
         }
         if (positions.size() > 0) {
             BoundingBox bounds = new BoundingBox(positions);
-            mapView.setCenter(bounds.getCenterPoint());
-            int zoomLevel = mapView.getModel().mapViewPosition.getZoomLevel();
-            int tileSize = mapView.getModel().displayModel.getTileSize();
+            mMapView.setCenter(bounds.getCenterPoint());
+            int zoomLevel = mMapView.getModel().mapViewPosition.getZoomLevel();
+            int tileSize = mMapView.getModel().displayModel.getTileSize();
             // The idea of zoomLimit is to avoid zooming in past MAX_ZOOM_IN_LEVEL,
             // but if already zoomed in beyond that, avoid needlessly zooming out.
             int zoomLimit = Math.max(zoomLevel, MAX_ZOOM_IN_LEVEL);
-            mapView.setZoomLevel(positions.size() == 1 ? (byte) zoomLimit :
+            mMapView.setZoomLevel(positions.size() == 1 ? (byte) zoomLimit :
                 (byte) Math.min(zoomLimit, LatLongUtils.zoomForBounds(
-                    mapView.getDimension(), bounds, tileSize
+                    mMapView.getDimension(), bounds, tileSize
                 ))
             );
             return true;
