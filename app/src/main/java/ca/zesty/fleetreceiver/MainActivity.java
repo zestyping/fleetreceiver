@@ -6,7 +6,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.graphics.Typeface;
+import android.graphics.Paint.Cap;
+import android.graphics.Paint.Join;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -15,19 +16,28 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.TextView;
 
+import org.mapsforge.core.graphics.Align;
+import org.mapsforge.core.graphics.Canvas;
+import org.mapsforge.core.graphics.FontFamily;
+import org.mapsforge.core.graphics.FontStyle;
+import org.mapsforge.core.graphics.Paint;
+import org.mapsforge.core.graphics.Path;
+import org.mapsforge.core.graphics.Style;
 import org.mapsforge.core.model.BoundingBox;
 import org.mapsforge.core.model.LatLong;
 import org.mapsforge.core.model.Point;
+import org.mapsforge.core.model.Rectangle;
 import org.mapsforge.core.util.LatLongUtils;
+import org.mapsforge.core.util.MercatorProjection;
 import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
 import org.mapsforge.map.android.util.AndroidPreferences;
 import org.mapsforge.map.android.util.AndroidUtil;
 import org.mapsforge.map.android.view.MapView;
 import org.mapsforge.map.datastore.MapDataStore;
 import org.mapsforge.map.datastore.MultiMapDataStore;
+import org.mapsforge.map.layer.Layer;
 import org.mapsforge.map.layer.cache.TileCache;
 import org.mapsforge.map.layer.overlay.Marker;
 import org.mapsforge.map.layer.renderer.TileRendererLayer;
@@ -42,6 +52,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -60,7 +71,8 @@ public class MainActivity extends BaseActivity {
     private AppDatabase mDb = AppDatabase.getDatabase(this);
     private MapView mMapView;
     private Map<String, Marker> mMarkers = new HashMap<>();
-    private Map<String, TextView> mLabels = new HashMap<>();
+    private Map<String, String> mLabels = new HashMap<>();
+    private Map<String, LatLong> mPositions = new HashMap<>();
     private String mSelectedReporterId = null;
     private Handler mHandler = null;
     private Runnable mRunnable = null;
@@ -169,7 +181,8 @@ public class MainActivity extends BaseActivity {
             mMapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
         tileRendererLayer.setXmlRenderTheme(InternalRenderTheme.DEFAULT);
 
-        mMapView.getLayerManager().getLayers().add(tileRendererLayer);
+        mMapView.addLayer(tileRendererLayer);
+        mMapView.addLayer(new ReporterLayer());
         mMapView.setClickable(true);
         mMapView.getMapScaleBar().setVisible(true);
         mMapView.setBuiltInZoomControls(true);
@@ -302,67 +315,10 @@ public class MainActivity extends BaseActivity {
             if (rp.point == null) continue;
 
             LatLong position = new LatLong(rp.point.latitude, rp.point.longitude);
-            Marker marker = mMarkers.get(rp.reporter.reporterId);
-            if (marker == null) {
-                marker = new ReporterMarker(rp.reporter.reporterId, position);
-                mMarkers.put(rp.reporter.reporterId, marker);
-                mMapView.addLayer(marker);
-            } else {
-                marker.setLatLong(position);
-                if (rp.reporter.reporterId.equals(mSelectedReporterId)) {
-                    mSelectionMarker.setLatLong(position);
-                }
-            }
-
-            TextView label = mLabels.get(rp.reporter.reporterId);
-            if (label == null) {
-                label = new TextView(this);
-                label.setTextColor(0xffffffff);
-                label.setText(rp.reporter.label);
-                label.setTextSize(16);
-                label.setTypeface(Typeface.DEFAULT_BOLD);
-                label.setShadowLayer(12, 0, 0, 0xff000000);
-                label.setPadding(0, 12, 0, 0);
-                label.setLayoutParams(new MapView.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    position, MapView.LayoutParams.Alignment.TOP_CENTER
-                ));
-                mLabels.put(rp.reporter.reporterId, label);
-                mMapView.addView(label);
-            } else {
-                label.setLayoutParams(new MapView.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    position, MapView.LayoutParams.Alignment.TOP_CENTER
-                ));
-            }
+            mPositions.put(rp.reporter.reporterId, position);
+            mLabels.put(rp.reporter.reporterId, rp.reporter.label);
         }
         mMapView.getLayerManager().redrawLayers();
-    }
-
-    void toggleSelectReporter(String reporterId) {
-        if (reporterId.equals(mSelectedReporterId)) {
-            mSelectedReporterId = null;
-            if (mSelectionMarker != null) {
-                mMapView.getLayerManager().getLayers().remove(mSelectionMarker);
-            }
-            mMapView.getModel().mapViewPosition.setPivot(null);
-        } else {
-            mSelectedReporterId = reporterId;
-            LatLong position = mMarkers.get(reporterId).getPosition();
-            if (mSelectionMarker == null) {
-                mSelectionMarker = new Marker(
-                    position,
-                    AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.select)),
-                    0, 0);
-            }
-            mSelectionMarker.setLatLong(position);
-            mMapView.getModel().mapViewPosition.setPivot(position);
-            // MapView.addLayer is stupid and will crash if we re-add an existing layer.
-            if (!mMapView.getLayerManager().getLayers().contains(mSelectionMarker)) {
-                mMapView.addLayer(mSelectionMarker);
-            }
-        }
-        updateReporterFrame();
     }
 
     void updateReporterFrame() {
@@ -392,37 +348,195 @@ public class MainActivity extends BaseActivity {
         if (newZoom > pos.getZoomLevelMax()) newZoom = pos.getZoomLevelMax();
         change = newZoom - zoom;
 
-        Marker marker = mMarkers.get(mSelectedReporterId);
-        if (marker == null) {
+        LatLong pivot = mPositions.get(mSelectedReporterId);
+        if (pivot == null) {
             pos.setZoomLevel(newZoom, true);
             return;
         }
         MapViewProjection proj = mMapView.getMapViewProjection();
         Point centerPoint = proj.toPixels(pos.getCenter());
-        Point pivotPoint = proj.toPixels(marker.getLatLong());
+        Point pivotPoint = proj.toPixels(pivot);
         double dx = centerPoint.x - pivotPoint.x;
         double dy = centerPoint.y - pivotPoint.y;
         double factor = 1 - Math.pow(0.5, change);
         pos.moveCenterAndZoom(dx * factor, dy * factor, (byte) change, false);
     }
 
-    class ReporterMarker extends Marker {
-        private String mReporterId;
-        private double mTapRadius;
+    int dpToPixels(double dp) {
+        return (int) (dp * getResources().getDisplayMetrics().density);
+    }
 
-        ReporterMarker(String mReporterId, LatLong position) {
-            super(position, AndroidGraphicFactory.convertToBitmap(getResources().getDrawable(R.drawable.marker)), 0, 0);
-            this.mReporterId = mReporterId;
-            this.mTapRadius = getBitmap().getWidth() * 0.8;
+    android.graphics.Canvas getAndroidCanvas(Canvas canvas) {
+        try {
+            Field field = canvas.getClass().getDeclaredField("canvas");
+            field.setAccessible(true);
+            return (android.graphics.Canvas) field.get(canvas);
+        } catch (NoSuchFieldException e) {
+        } catch (IllegalAccessException e) {
+        }
+        return null;
+    }
+
+    android.graphics.Paint getAndroidPaint(Paint paint) {
+        try {
+            Field field = paint.getClass().getDeclaredField("paint");
+            field.setAccessible(true);
+            return (android.graphics.Paint) field.get(paint);
+        } catch (NoSuchFieldException e) {
+        } catch (IllegalAccessException e) {
+        }
+        return null;
+    }
+
+    void setStrokeCap(Paint paint, Cap cap) {
+        android.graphics.Paint aPaint = getAndroidPaint(paint);
+        if (aPaint != null) aPaint.setStrokeCap(cap);
+    }
+
+    void setStrokeJoin(Paint paint, Join join) {
+        android.graphics.Paint aPaint = getAndroidPaint(paint);
+        if (aPaint != null) aPaint.setStrokeJoin(join);
+    }
+
+    void setShadowLayer(Paint paint, double radius, double dx, double dy, int color) {
+        android.graphics.Paint aPaint = getAndroidPaint(paint);
+        if (aPaint != null) aPaint.setShadowLayer((float) radius, (float) dx, (float) dy, color);
+    }
+
+    Paint clonePaint(Paint paint) {
+        return AndroidGraphicFactory.INSTANCE.createPaint(paint);
+    }
+
+    Paint getStrokePaint(int color, double strokeWidthDp) {
+        Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        paint.setStyle(Style.STROKE);
+        paint.setColor(color);
+        paint.setStrokeWidth(dpToPixels(strokeWidthDp));
+        setStrokeJoin(paint, Join.MITER);
+        return paint;
+    }
+
+    Paint getFillPaint(int color) {
+        Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
+        paint.setStyle(Style.FILL);
+        paint.setColor(color);
+        return paint;
+    }
+
+    Paint getTextPaint(int color, double sizeDp, FontStyle fontStyle, Align align) {
+        Paint paint = getFillPaint(color);
+        paint.setTextSize(dpToPixels(sizeDp));
+        paint.setTypeface(FontFamily.DEFAULT, fontStyle);
+        paint.setTextAlign(align);
+        return paint;
+    }
+
+    Paint getTextOutlinePaint(Paint textPaint, int color, double strokeWidthDp) {
+        Paint paint = clonePaint(textPaint);
+        paint.setStyle(Style.STROKE);
+        paint.setColor(color);
+        paint.setStrokeWidth(dpToPixels(strokeWidthDp));
+        return paint;
+    }
+
+    class ReporterLayer extends Layer {
+        final int DOT_RADIUS = dpToPixels(6);
+        final int TAP_RADIUS = dpToPixels(18);
+        final int SHADOW = dpToPixels(6);
+        final int LABEL_OFFSET = dpToPixels(24);
+        final int FRAME_RADIUS = dpToPixels(12);
+
+        Map<String, Point> drawnPoints = new HashMap<>();
+
+        @Override public void draw(BoundingBox boundingBox, byte zoomLevel, Canvas canvas, Point topLeftPoint) {
+            long mapSize = MercatorProjection.getMapSize(zoomLevel, this.displayModel.getTileSize());
+            Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
+            Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW);
+
+            Paint dotPaint = getFillPaint(0xff20a040);
+            setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
+            Paint circlePaint = getStrokePaint(0xffffffff, 2);
+            Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
+            Paint softOutlinePaint = getTextOutlinePaint(textPaint, 0xc0ffffff, 4);
+            Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 1);
+            Paint selectedOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 4);
+
+            Point selectedCenter = null;
+            drawnPoints.clear();
+
+            for (String reporterId : mPositions.keySet()) {
+                LatLong position = mPositions.get(reporterId);
+                String label = mLabels.get(reporterId);
+                int cx = (int) (MercatorProjection.longitudeToPixelX(position.longitude, mapSize) - topLeftPoint.x);
+                int cy = (int) (MercatorProjection.latitudeToPixelY(position.latitude, mapSize) - topLeftPoint.y);
+                Point center = new Point(cx, cy);
+                if (reporterId.equals(mSelectedReporterId)) {
+                    selectedCenter = center;
+                    continue;
+                }
+                if (canvasEnvelope.contains(center)) {
+                    drawnPoints.put(reporterId, center);
+                    canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
+                    canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
+                    canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
+                }
+            }
+
+            // Draw all text on top of all dots.
+            for (String reporterId : drawnPoints.keySet()) {
+                String label = mLabels.get(reporterId);
+                Point point = drawnPoints.get(reporterId);
+                int cx = (int) point.x;
+                int cy = (int) point.y;
+                canvas.drawText(label, cx, cy + LABEL_OFFSET, hardOutlinePaint);
+                canvas.drawText(label, cx, cy + LABEL_OFFSET, textPaint);
+            }
+
+            // Draw selected reporter last (i.e. on top).
+            if (selectedCenter != null) {
+                String label = mLabels.get(mSelectedReporterId);
+                int cx = (int) selectedCenter.x;
+                int cy = (int) selectedCenter.y;
+                Path path = AndroidGraphicFactory.INSTANCE.createPath();
+                int scale = FRAME_RADIUS / 2;
+                for (int xs = -1; xs <= 1; xs += 2) {
+                    for (int ys = -1; ys <= 1; ys += 2) {
+                        path.moveTo(cx + xs*scale*2, cy + ys*scale);
+                        path.lineTo(cx + xs*scale*2, cy + ys*scale*2);
+                        path.lineTo(cx + xs*scale, cy + ys*scale*2);
+                    }
+                }
+
+                Paint frameShadowPaint = getStrokePaint(0xffffffff, 2);
+                setShadowLayer(frameShadowPaint, SHADOW/2, 0, 0, 0xff000000);
+                canvas.drawPath(path, frameShadowPaint);
+                canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
+                canvas.drawCircle(cx, cy, DOT_RADIUS + 1, getStrokePaint(0xc0000000, 2));
+                canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
+                canvas.drawText(label, cx, cy + LABEL_OFFSET, selectedOutlinePaint);
+                canvas.drawPath(path, getStrokePaint(0xc0000000, 4));
+                canvas.drawPath(path, getStrokePaint(0xffffffff, 2));
+                canvas.drawText(label, cx, cy + LABEL_OFFSET, textPaint);
+            }
         }
 
         public boolean onTap(LatLong tap, Point layerPoint, Point tapPoint) {
-            if (Math.abs(layerPoint.x - tapPoint.x) < mTapRadius &&
-                Math.abs(layerPoint.y - tapPoint.y) < mTapRadius) {
-                toggleSelectReporter(mReporterId);
-                return true;
+            tapPoint = mMapView.getMapViewProjection().toPixels(tap);
+            String lastSelected = mSelectedReporterId;
+            mSelectedReporterId = null;
+            for (String reporterId : drawnPoints.keySet()) {
+                LatLong position = mPositions.get(reporterId);
+                Point point = mMapView.getMapViewProjection().toPixels(position);
+                if (Math.abs(point.x - tapPoint.x) < TAP_RADIUS &&
+                    Math.abs(point.y - tapPoint.y) < TAP_RADIUS &&
+                    !reporterId.equals(lastSelected)) {
+                    mSelectedReporterId = reporterId;
+                    break;
+                }
             }
-            return false;
+            updateReporterFrame();
+            mMapView.getLayerManager().redrawLayers();
+            return true;
         }
     }
 }
