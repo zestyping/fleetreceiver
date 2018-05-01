@@ -8,6 +8,7 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Paint.Cap;
 import android.graphics.Paint.Join;
+import android.graphics.RectF;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -73,6 +74,7 @@ public class MainActivity extends BaseActivity {
     private Map<String, Marker> mMarkers = new HashMap<>();
     private Map<String, String> mLabels = new HashMap<>();
     private Map<String, LatLong> mPositions = new HashMap<>();
+    private Map<String, PointEntity> mPoints = new HashMap<>();
     private String mSelectedReporterId = null;
     private Handler mHandler = null;
     private Runnable mRunnable = null;
@@ -186,6 +188,7 @@ public class MainActivity extends BaseActivity {
         mMapView.setClickable(true);
         mMapView.getMapScaleBar().setVisible(true);
         mMapView.setBuiltInZoomControls(true);
+        mMapView.getMapZoomControls().setAutoHide(false);
         mMapView.getMapZoomControls().getChildAt(0).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 zoom(-1);
@@ -311,11 +314,13 @@ public class MainActivity extends BaseActivity {
     }
 
     void updateMarkers() {
+        long now = System.currentTimeMillis();
         for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
             if (rp.point == null) continue;
 
             LatLong position = new LatLong(rp.point.latitude, rp.point.longitude);
             mPositions.put(rp.reporter.reporterId, position);
+            mPoints.put(rp.reporter.reporterId, rp.point);
             mLabels.put(rp.reporter.reporterId, rp.reporter.label);
         }
         mMapView.getLayerManager().redrawLayers();
@@ -331,10 +336,9 @@ public class MainActivity extends BaseActivity {
             u.showFrameChild(R.id.reporter_details);
             ReporterEntity r = mDb.getReporterDao().get(mSelectedReporterId);
             PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
-            int motionColor = p.isResting() ? 0xffe04020 : 0xff00a020;
-            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh, motionColor));
+            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
             u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
-            u.setText(R.id.motion, Utils.describePeriod(p.getSegmentMillis()), motionColor);
+            u.setText(R.id.motion, Utils.describePeriod(p.getSegmentMillis()));
             u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "since last stop");
         }
     }
@@ -453,9 +457,11 @@ public class MainActivity extends BaseActivity {
             Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
             Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW);
 
+            Paint backgroundPaint = getFillPaint(0x40ffffff);
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
+            Paint arcPaint = getStrokePaint(0xffff0000, 2);
             Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
             Paint softOutlinePaint = getTextOutlinePaint(textPaint, 0xc0ffffff, 4);
             Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 1);
@@ -463,6 +469,10 @@ public class MainActivity extends BaseActivity {
 
             Point selectedCenter = null;
             drawnPoints.clear();
+            long now = System.currentTimeMillis();
+
+            getAndroidCanvas(canvas).drawRect((float) canvasEnvelope.left, (float) canvasEnvelope.top,
+                (float) canvasEnvelope.right, (float) canvasEnvelope.bottom, getAndroidPaint(backgroundPaint));
 
             for (String reporterId : mPositions.keySet()) {
                 LatLong position = mPositions.get(reporterId);
@@ -479,6 +489,11 @@ public class MainActivity extends BaseActivity {
                     canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
+                    long minSinceReport = (now - mPoints.get(reporterId).timeMillis) / 60000;
+                    getAndroidCanvas(canvas).drawArc(
+                        new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
+                        270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
+                    );
                 }
             }
 
@@ -494,7 +509,11 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedCenter != null) {
+                getAndroidCanvas(canvas).drawRect((float) canvasEnvelope.left, (float) canvasEnvelope.top,
+                    (float) canvasEnvelope.right, (float) canvasEnvelope.bottom, getAndroidPaint(backgroundPaint));
+
                 String label = mLabels.get(mSelectedReporterId);
+                long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / 60000;
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
                 Path path = AndroidGraphicFactory.INSTANCE.createPath();
@@ -513,6 +532,10 @@ public class MainActivity extends BaseActivity {
                 canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                 canvas.drawCircle(cx, cy, DOT_RADIUS + 1, getStrokePaint(0xc0000000, 2));
                 canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
+                getAndroidCanvas(canvas).drawArc(
+                    new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
+                    270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
+                );
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, selectedOutlinePaint);
                 canvas.drawPath(path, getStrokePaint(0xc0000000, 4));
                 canvas.drawPath(path, getStrokePaint(0xffffffff, 2));
