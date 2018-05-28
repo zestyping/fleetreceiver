@@ -131,6 +131,8 @@ public class MainActivity extends BaseActivity {
     }
 
     @Override protected void onDestroy() {
+        unregisterReceiver(mLogMessageReceiver);
+        unregisterReceiver(mPointsAddedReceiver);
         saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
@@ -212,12 +214,16 @@ public class MainActivity extends BaseActivity {
     }
 
     void addMapFilesInDir(MultiMapDataStore multiMap, File dir) {
-        for (File file : dir.listFiles()) {
-            if (file.isDirectory()) {
-                addMapFilesInDir(multiMap, file);
-            }
-            if (file.isFile() && file.getName().toLowerCase().endsWith(".map")) {
-                addMapFile(multiMap, file);
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    addMapFilesInDir(multiMap, file);
+                }
+                if (file.isFile() && file.getName().toLowerCase().endsWith(".map")) {
+
+                    addMapFile(multiMap, file);
+                }
             }
         }
     }
@@ -338,7 +344,7 @@ public class MainActivity extends BaseActivity {
             PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
             u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
             u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
-            u.setText(R.id.motion, Utils.describePeriod(p.getSegmentMillis()));
+            u.setText(R.id.motion, Utils.describePeriod(System.currentTimeMillis() - p.lastTransitionMillis));
             u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "since last stop");
         }
     }
@@ -443,6 +449,16 @@ public class MainActivity extends BaseActivity {
         return paint;
     }
 
+    void drawRect(Canvas canvas, Rectangle rect, Paint paint) {
+        Path path = AndroidGraphicFactory.INSTANCE.createPath();
+        path.moveTo((float) rect.left, (float) rect.top);
+        path.lineTo((float) rect.right, (float) rect.top);
+        path.lineTo((float) rect.right, (float) rect.bottom);
+        path.lineTo((float) rect.left, (float) rect.bottom);
+        path.lineTo((float) rect.left, (float) rect.top);
+        canvas.drawPath(path, paint);
+    }
+
     class ReporterLayer extends Layer {
         final int DOT_RADIUS = dpToPixels(6);
         final int TAP_RADIUS = dpToPixels(18);
@@ -457,7 +473,7 @@ public class MainActivity extends BaseActivity {
             Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
             Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW);
 
-            Paint backgroundPaint = getFillPaint(0x40ffffff);
+            Paint backgroundPaint = getFillPaint(0x60ffffff);
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
@@ -471,8 +487,7 @@ public class MainActivity extends BaseActivity {
             drawnPoints.clear();
             long now = System.currentTimeMillis();
 
-            getAndroidCanvas(canvas).drawRect((float) canvasEnvelope.left, (float) canvasEnvelope.top,
-                (float) canvasEnvelope.right, (float) canvasEnvelope.bottom, getAndroidPaint(backgroundPaint));
+            drawRect(canvas, canvasEnvelope, backgroundPaint);
 
             for (String reporterId : mPositions.keySet()) {
                 LatLong position = mPositions.get(reporterId);
@@ -509,9 +524,6 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedCenter != null) {
-                getAndroidCanvas(canvas).drawRect((float) canvasEnvelope.left, (float) canvasEnvelope.top,
-                    (float) canvasEnvelope.right, (float) canvasEnvelope.bottom, getAndroidPaint(backgroundPaint));
-
                 String label = mLabels.get(mSelectedReporterId);
                 long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / 60000;
                 int cx = (int) selectedCenter.x;

@@ -214,7 +214,7 @@ public class Utils {
     }
 
     /** Gets the appropriate SmsManager to use for sending text messages.
-     From PataBasi by Kristen Tonga. */
+        From PataBasi by Kristen Tonga. */
     public SmsManager getSmsManager() {
         if (android.os.Build.VERSION.SDK_INT >= 22) {
             int subscriptionId = SmsManager.getDefaultSmsSubscriptionId();
