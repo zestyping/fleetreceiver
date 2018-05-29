@@ -619,7 +619,7 @@ public class MainActivity extends BaseActivity {
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
             Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
             Paint softOutlinePaint = getTextOutlinePaint(textPaint, 0xc0ffffff, 4);
-            Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 1);
+            Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 2);
             Paint selectedOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 4);
 
             Point selectedCenter = null;
@@ -719,7 +719,7 @@ public class MainActivity extends BaseActivity {
                             ay = Math.min(ay, cy + LABEL_OFFSET - PADDING - TEXT_HEIGHT);
                         }
                     }
-                    canvas.drawText(arrowLabel, ax, ay, selectedOutlinePaint);
+                    canvas.drawText(arrowLabel, ax, ay, hardOutlinePaint);
                     canvas.drawText(arrowLabel, ax, ay, arrowTextPaint);
                 }
 
