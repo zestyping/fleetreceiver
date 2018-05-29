@@ -68,8 +68,11 @@ public class MainActivity extends BaseActivity {
     static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
     static final int MAX_ZOOM_IN_LEVEL = 14;
     static final double TAU = 2 * Math.PI;
-    static final double DEGREES = TAU / 360;
+    static final double DEGREE = TAU / 360;
     static final double EARTH_RADIUS = 6371009;  // meters
+    static final long SECOND = 1000;
+    static final long MINUTE = 60 * SECOND;
+    static final long HOUR = 60 * MINUTE;
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
@@ -350,7 +353,7 @@ public class MainActivity extends BaseActivity {
             u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
             long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
             u.setText(R.id.motion, Utils.describePeriod(System.currentTimeMillis() - lastTransitionMillis));
-            u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "since last stop");
+            u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "in motion");
         }
     }
 
@@ -424,7 +427,6 @@ public class MainActivity extends BaseActivity {
             float density = getResources().getDisplayMetrics().density;
             float[] lengths = new float[] {(float) on * density, (float) off * density};
             aPaint.setPathEffect(new DashPathEffect(lengths, 0));
-//            aPaint.setStrokeCap(Cap.BUTT);
         }
     }
 
@@ -441,7 +443,7 @@ public class MainActivity extends BaseActivity {
         paint.setStyle(Style.STROKE);
         paint.setColor(color);
         paint.setStrokeWidth(dpToPixels(strokeWidthDp));
-        setStrokeJoin(paint, Join.MITER);
+        setStrokeJoin(paint, Join.ROUND);
         return paint;
     }
 
@@ -534,11 +536,11 @@ public class MainActivity extends BaseActivity {
     LatLong deadReckon(PointEntity point, double seconds) {
         double meters = point.speedKmh * 1000 * seconds / 3600;
         double latRadPerMeter = 1 / EARTH_RADIUS;
-        double lonRadPerMeter = 1 / Math.cos(point.latitude * DEGREES) / EARTH_RADIUS;
-        double northRadians = Math.cos(point.bearing * DEGREES) * meters * latRadPerMeter;
-        double eastRadians = Math.sin(point.bearing * DEGREES) * meters * lonRadPerMeter;
-        double latitude = point.latitude + northRadians / DEGREES;
-        double longitude = point.longitude + eastRadians / DEGREES;
+        double lonRadPerMeter = 1 / Math.cos(point.latitude *DEGREE) / EARTH_RADIUS;
+        double northRadians = Math.cos(point.bearing *DEGREE) * meters * latRadPerMeter;
+        double eastRadians = Math.sin(point.bearing *DEGREE) * meters * lonRadPerMeter;
+        double latitude = point.latitude + northRadians /DEGREE;
+        double longitude = point.longitude + eastRadians /DEGREE;
         return new LatLong(
             latitude < -90 ? -90 : latitude > 90 ? 90 : latitude,
             longitude < -180 ? latitude + 360 : longitude >= 180 ? longitude - 360 : longitude
@@ -547,9 +549,11 @@ public class MainActivity extends BaseActivity {
 
     /** Decides on the time period that determines the length of velocity arrows. */
     int getArrowSeconds(BoundingBox box) {
-        double heightMeters = EARTH_RADIUS * box.getLatitudeSpan() * DEGREES;
-        double topWidthMeters = EARTH_RADIUS * Math.cos(box.maxLatitude * DEGREES) * box.getLongitudeSpan() * DEGREES;
-        double bottomWidthMeters = EARTH_RADIUS * Math.cos(box.minLatitude * DEGREES) * box.getLongitudeSpan() * DEGREES;
+        double heightMeters = EARTH_RADIUS * box.getLatitudeSpan() *DEGREE;
+        double topWidthMeters = EARTH_RADIUS * Math.cos(box.maxLatitude *DEGREE) * box.getLongitudeSpan() *DEGREE;
+
+        double bottomWidthMeters = EARTH_RADIUS * Math.cos(box.minLatitude *DEGREE) * box.getLongitudeSpan() *DEGREE;
+
         double dimension = Math.min(Math.min(topWidthMeters, bottomWidthMeters), heightMeters);
         double maxSpeedKmh = 30;
         for (PointEntity point : mPoints.values()) {
@@ -583,7 +587,8 @@ public class MainActivity extends BaseActivity {
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
             Paint arrowPaint = getStrokePaint(0xff20a040, 3);
-            setDashPattern(arrowPaint, 2, 4);
+            Paint trackPaint = getStrokePaint(0xc020a040, 3);
+            setDashPattern(trackPaint, 2, 6);
             Paint arrowOutlinePaint = getStrokePaint(0xc0ffffff, 3);
             Paint selectedArrowOutlinePaint = getStrokePaint(0xffffffff, 2);
             Paint arrowTextPaint = getTextPaint(0xff20a040, 12, FontStyle.BOLD, Align.CENTER);
@@ -620,7 +625,7 @@ public class MainActivity extends BaseActivity {
                     canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
-                    long minSinceReport = (now - mPoints.get(reporterId).timeMillis) / 60000;
+                    long minSinceReport = (now - mPoints.get(reporterId).timeMillis) / MINUTE;
                     getAndroidCanvas(canvas).drawArc(
                         new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
                         270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
@@ -643,11 +648,21 @@ public class MainActivity extends BaseActivity {
             // Draw selected reporter last (i.e. on top).
             if (selectedCenter != null) {
                 String label = mLabels.get(mSelectedReporterId);
-                long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / 60000;
+                long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / MINUTE;
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
                 LatLong reckonPos = deadReckon(mPoints.get(mSelectedReporterId), arrowSeconds);
                 Point arrowHead = toPixels(reckonPos, mapSize, topLeftPoint);
+
+                Path track = AndroidGraphicFactory.INSTANCE.createPath();
+                boolean firstPoint = true;
+                for (PointEntity point : mDb.getPointDao().getAllForReporterSince(mSelectedReporterId, now - HOUR)) {
+                    Point p = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPoint);
+                    if (firstPoint) track.moveTo((float) p.x, (float) p.y);
+                    else track.lineTo((float) p.x, (float) p.y);
+                    firstPoint = false;
+                }
+                canvas.drawPath(track, trackPaint);
 
                 Path path = AndroidGraphicFactory.INSTANCE.createPath();
                 int scale = FRAME_RADIUS / 2;
@@ -660,6 +675,7 @@ public class MainActivity extends BaseActivity {
                 }
 
                 Paint frameShadowPaint = getStrokePaint(0xffffffff, 2);
+                setStrokeJoin(trackPaint, Join.MITER);
                 setShadowLayer(frameShadowPaint, SHADOW/2, 0, 0, 0xff000000);
                 canvas.drawPath(path, frameShadowPaint);
 
