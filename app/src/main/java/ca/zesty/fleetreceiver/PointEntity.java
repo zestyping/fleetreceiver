@@ -35,6 +35,10 @@ public class PointEntity {
         return type == 'r' || type == 's';
     }
 
+    public boolean isTransition() {
+        return type == 'g' || type == 's';
+    }
+
     /** Formats a point for readability and debugging. */
     public String toString() {
         String fix =  String.format(

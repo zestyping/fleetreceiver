@@ -348,7 +348,8 @@ public class MainActivity extends BaseActivity {
             PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
             u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
             u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
-            u.setText(R.id.motion, Utils.describePeriod(System.currentTimeMillis() - p.lastTransitionMillis));
+            long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
+            u.setText(R.id.motion, Utils.describePeriod(System.currentTimeMillis() - lastTransitionMillis));
             u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "since last stop");
         }
     }
