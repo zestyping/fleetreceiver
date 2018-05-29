@@ -551,9 +551,7 @@ public class MainActivity extends BaseActivity {
     int getArrowSeconds(BoundingBox box) {
         double heightMeters = EARTH_RADIUS * box.getLatitudeSpan() *DEGREE;
         double topWidthMeters = EARTH_RADIUS * Math.cos(box.maxLatitude *DEGREE) * box.getLongitudeSpan() *DEGREE;
-
         double bottomWidthMeters = EARTH_RADIUS * Math.cos(box.minLatitude *DEGREE) * box.getLongitudeSpan() *DEGREE;
-
         double dimension = Math.min(Math.min(topWidthMeters, bottomWidthMeters), heightMeters);
         double maxSpeedKmh = 30;
         for (PointEntity point : mPoints.values()) {
@@ -647,8 +645,9 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedCenter != null) {
-                String label = mLabels.get(mSelectedReporterId);
-                long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / MINUTE;
+                long timeMillis = mPoints.get(mSelectedReporterId).timeMillis;
+                String label = mLabels.get(mSelectedReporterId) + " (" + Utils.describeTime(timeMillis) + ")";
+                long minSinceReport = (now - timeMillis) / MINUTE;
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
                 LatLong reckonPos = deadReckon(mPoints.get(mSelectedReporterId), arrowSeconds);
