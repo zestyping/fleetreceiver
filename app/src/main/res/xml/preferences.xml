@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:title="Settings">
+
+  <EditTextPreference
+      android:key="pref_expected_reporting_interval"
+      android:title="Expected reporting interval"
+      android:summary="Maximum number of minutes between expected points"
+      android:numeric="decimal"
+      android:inputType="numberDecimal"
+      android:defaultValue="10" />
+
+</PreferenceScreen>

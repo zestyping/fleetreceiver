@@ -176,6 +176,9 @@ public class MainActivity extends BaseActivity {
                 "This map will load and show the information from all the " +
                 "\".map\" files in your Download folder.");
         }
+        if (item.getItemId() == R.id.action_settings) {
+            startActivity(new Intent(this, SettingsActivity.class));
+        }
         return false;
     }
 
@@ -438,13 +441,18 @@ public class MainActivity extends BaseActivity {
         return AndroidGraphicFactory.INSTANCE.createPaint(paint);
     }
 
-    Paint getStrokePaint(int color, double strokeWidthDp) {
+    Paint getStrokePaint(int color, double strokeWidthDp, Cap cap) {
         Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
         paint.setStyle(Style.STROKE);
         paint.setColor(color);
         paint.setStrokeWidth(dpToPixels(strokeWidthDp));
+        setStrokeCap(paint, cap);
         setStrokeJoin(paint, Join.ROUND);
         return paint;
+    }
+
+    Paint getStrokePaint(int color, double strokeWidthDp) {
+        return getStrokePaint(color, strokeWidthDp, Cap.BUTT);
     }
 
     Paint getFillPaint(int color) {
@@ -576,6 +584,16 @@ public class MainActivity extends BaseActivity {
 
         Map<String, Point> drawnPoints = new HashMap<>();
 
+        void drawStalenessArc(Canvas canvas, int cx, int cy, long timeMillis) {
+            long minSinceReport = (System.currentTimeMillis() - timeMillis) / MINUTE;
+            Paint arcPaint = minSinceReport > u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10) ?
+                getStrokePaint(0xffff0000, 2) : getStrokePaint(0xfff0a000, 2);
+            getAndroidCanvas(canvas).drawArc(
+                new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
+                270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
+            );
+        }
+
         @Override public void draw(BoundingBox boundingBox, byte zoomLevel, Canvas canvas, Point topLeftPoint) {
             long mapSize = MercatorProjection.getMapSize(zoomLevel, this.displayModel.getTileSize());
             Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
@@ -591,7 +609,6 @@ public class MainActivity extends BaseActivity {
             Paint selectedArrowOutlinePaint = getStrokePaint(0xffffffff, 2);
             Paint arrowTextPaint = getTextPaint(0xff20a040, 12, FontStyle.BOLD, Align.CENTER);
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
-            Paint arcPaint = getStrokePaint(0xffff0000, 2);
             Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
             Paint softOutlinePaint = getTextOutlinePaint(textPaint, 0xc0ffffff, 4);
             Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 1);
@@ -623,11 +640,7 @@ public class MainActivity extends BaseActivity {
                     canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
-                    long minSinceReport = (now - mPoints.get(reporterId).timeMillis) / MINUTE;
-                    getAndroidCanvas(canvas).drawArc(
-                        new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
-                        270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
-                    );
+                    drawStalenessArc(canvas, cx, cy, mPoints.get(reporterId).timeMillis);
 
                     drawnPoints.put(reporterId, center);
                 }
@@ -647,7 +660,6 @@ public class MainActivity extends BaseActivity {
             if (selectedCenter != null) {
                 long timeMillis = mPoints.get(mSelectedReporterId).timeMillis;
                 String label = mLabels.get(mSelectedReporterId) + " (" + Utils.describeTime(timeMillis) + ")";
-                long minSinceReport = (now - timeMillis) / MINUTE;
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
                 LatLong reckonPos = deadReckon(mPoints.get(mSelectedReporterId), arrowSeconds);
@@ -674,7 +686,6 @@ public class MainActivity extends BaseActivity {
                 }
 
                 Paint frameShadowPaint = getStrokePaint(0xffffffff, 2);
-                setStrokeJoin(trackPaint, Join.MITER);
                 setShadowLayer(frameShadowPaint, SHADOW/2, 0, 0, 0xff000000);
                 canvas.drawPath(path, frameShadowPaint);
 
@@ -707,14 +718,11 @@ public class MainActivity extends BaseActivity {
                 canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                 canvas.drawCircle(cx, cy, DOT_RADIUS + 1, getStrokePaint(0xc0000000, 2));
                 canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
-                getAndroidCanvas(canvas).drawArc(
-                    new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
-                    270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
-                );
+                drawStalenessArc(canvas, cx, cy, timeMillis);
 
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, selectedOutlinePaint);
-                canvas.drawPath(path, getStrokePaint(0xc0000000, 4));
-                canvas.drawPath(path, getStrokePaint(0xffffffff, 2));
+                canvas.drawPath(path, getStrokePaint(0xc0000000, 4, Cap.ROUND));
+                canvas.drawPath(path, getStrokePaint(0xffffffff, 2, Cap.ROUND));
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, textPaint);
             }
         }
