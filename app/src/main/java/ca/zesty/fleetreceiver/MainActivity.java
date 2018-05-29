@@ -331,6 +331,9 @@ public class MainActivity extends BaseActivity {
 
     void updateMarkers() {
         long now = System.currentTimeMillis();
+        mPositions.clear();
+        mPoints.clear();
+        mLabels.clear();
         for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
             if (rp.point == null) continue;
 
@@ -338,6 +341,11 @@ public class MainActivity extends BaseActivity {
             mPositions.put(rp.reporter.reporterId, position);
             mPoints.put(rp.reporter.reporterId, rp.point);
             mLabels.put(rp.reporter.reporterId, rp.reporter.label);
+        }
+        if (mSelectedReporterId != null && !mPositions.containsKey(mSelectedReporterId)) {
+            // The selected reporter was deactivated or deleted.
+            mSelectedReporterId = null;
+            updateReporterFrame();
         }
         mMapView.getLayerManager().redrawLayers();
     }
