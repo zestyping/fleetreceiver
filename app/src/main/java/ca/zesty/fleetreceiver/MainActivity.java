@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint.Cap;
 import android.graphics.Paint.Join;
 import android.graphics.RectF;
@@ -66,6 +67,9 @@ public class MainActivity extends BaseActivity {
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
     static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
     static final int MAX_ZOOM_IN_LEVEL = 14;
+    static final double TAU = 2 * Math.PI;
+    static final double DEGREES = TAU / 360;
+    static final double EARTH_RADIUS = 6371009;  // meters
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
@@ -413,6 +417,20 @@ public class MainActivity extends BaseActivity {
         if (aPaint != null) aPaint.setShadowLayer((float) radius, (float) dx, (float) dy, color);
     }
 
+    void setDashPattern(Paint paint, double on, double off) {
+        android.graphics.Paint aPaint = getAndroidPaint(paint);
+        if (aPaint != null) {
+            float density = getResources().getDisplayMetrics().density;
+            float[] lengths = new float[] {(float) on * density, (float) off * density};
+            aPaint.setPathEffect(new DashPathEffect(lengths, 0));
+//            aPaint.setStrokeCap(Cap.BUTT);
+        }
+    }
+
+    double measureText(Paint paint, String text) {
+        return getAndroidPaint(paint).measureText(text);
+    }
+
     Paint clonePaint(Paint paint) {
         return AndroidGraphicFactory.INSTANCE.createPaint(paint);
     }
@@ -459,12 +477,99 @@ public class MainActivity extends BaseActivity {
         canvas.drawPath(path, paint);
     }
 
+    boolean drawArrow(Canvas canvas, Point tail, Point head, double size, Paint tipPaint, Paint bodyPaint) {
+        double dx = head.x - tail.x, dy = head.y - tail.y;
+        double d = Math.sqrt(dx*dx + dy*dy);
+        if (d < size) return false;
+        double ux = dx/d, uy = dy/d;
+        double px = uy, py = -ux;
+
+        Path body = AndroidGraphicFactory.INSTANCE.createPath();
+        body.moveTo((float) tail.x, (float) tail.y);
+        body.lineTo((float) (head.x - ux*size), (float) (head.y - uy*size));
+        Path tip = AndroidGraphicFactory.INSTANCE.createPath();
+        tip.moveTo((float) head.x, (float) head.y);
+        tip.lineTo((float) (head.x - ux*size - px*size/2), (float) (head.y - uy*size - py*size/2));
+        tip.lineTo((float) (head.x - ux*size + px*size/2), (float) (head.y - uy*size + py*size/2));
+        tip.lineTo((float) head.x, (float) head.y);
+
+        canvas.drawPath(body, bodyPaint);
+        canvas.drawPath(tip, tipPaint);
+        return true;
+    }
+
+    /** Draws an arrow.  The paint's stroke width should be the thickness of the arrow body. */
+    boolean drawArrow(Canvas canvas, Point tail, Point head, double size, Paint paint) {
+        Paint bodyPaint = clonePaint(paint);
+        Paint tipPaint = clonePaint(paint);
+        bodyPaint.setStyle(Style.STROKE);
+        tipPaint.setStyle(Style.FILL);
+        tipPaint.setStrokeWidth(0);
+        return drawArrow(canvas, tail, head, size, tipPaint, bodyPaint);
+    }
+
+    /** Draws the outline of an arrow.  The paint's stroke width should be the thickness of the arrow body. */
+    boolean drawArrowOutline(Canvas canvas, Point tail, Point head, double size, Paint paint, double outlineWidthDp) {
+        Paint bodyPaint = clonePaint(paint);
+        Paint tipPaint = clonePaint(paint);
+        bodyPaint.setStyle(Style.STROKE);
+        bodyPaint.setStrokeWidth(bodyPaint.getStrokeWidth() + dpToPixels(outlineWidthDp));
+        tipPaint.setStyle(Style.STROKE);
+        tipPaint.setStrokeWidth(dpToPixels(outlineWidthDp));
+        return drawArrow(canvas, tail, head, size, tipPaint, bodyPaint);
+    }
+
+    Point toPixels(LatLong position, long mapSize, Point topLeftPoint) {
+        return new Point(
+            MercatorProjection.longitudeToPixelX(position.longitude, mapSize) - topLeftPoint.x,
+            MercatorProjection.latitudeToPixelY(position.latitude, mapSize) - topLeftPoint.y
+        );
+    }
+
+    /** Estimates a new position by dead reckoning from the current position
+        using the current bearing and speed.  This calculation assumes a
+        locally flat earth, which is reasonably accurate for short distances.
+     */
+    LatLong deadReckon(PointEntity point, double seconds) {
+        double meters = point.speedKmh * 1000 * seconds / 3600;
+        double latRadPerMeter = 1 / EARTH_RADIUS;
+        double lonRadPerMeter = 1 / Math.cos(point.latitude * DEGREES) / EARTH_RADIUS;
+        double northRadians = Math.cos(point.bearing * DEGREES) * meters * latRadPerMeter;
+        double eastRadians = Math.sin(point.bearing * DEGREES) * meters * lonRadPerMeter;
+        double latitude = point.latitude + northRadians / DEGREES;
+        double longitude = point.longitude + eastRadians / DEGREES;
+        return new LatLong(
+            latitude < -90 ? -90 : latitude > 90 ? 90 : latitude,
+            longitude < -180 ? latitude + 360 : longitude >= 180 ? longitude - 360 : longitude
+        );
+    }
+
+    /** Decides on the time period that determines the length of velocity arrows. */
+    int getArrowSeconds(BoundingBox box) {
+        double heightMeters = EARTH_RADIUS * box.getLatitudeSpan() * DEGREES;
+        double topWidthMeters = EARTH_RADIUS * Math.cos(box.maxLatitude * DEGREES) * box.getLongitudeSpan() * DEGREES;
+        double bottomWidthMeters = EARTH_RADIUS * Math.cos(box.minLatitude * DEGREES) * box.getLongitudeSpan() * DEGREES;
+        double dimension = Math.min(Math.min(topWidthMeters, bottomWidthMeters), heightMeters);
+        double maxSpeedKmh = 30;
+        for (PointEntity point : mPoints.values()) {
+            maxSpeedKmh = Math.max(maxSpeedKmh, point.speedKmh);
+        }
+        double maxSeconds = (dimension / 3) / (maxSpeedKmh * 1000 / 3600);
+        for (int seconds : new int[] {3600, 1800, 900, 600, 300, 120, 60, 30, 15, 10, 5, 2, 1}) {
+            if (seconds < maxSeconds) return seconds;
+        }
+        return 1;
+    }
+
     class ReporterLayer extends Layer {
         final int DOT_RADIUS = dpToPixels(6);
         final int TAP_RADIUS = dpToPixels(18);
         final int SHADOW = dpToPixels(6);
-        final int LABEL_OFFSET = dpToPixels(24);
         final int FRAME_RADIUS = dpToPixels(12);
+        final int ARROW_TIP_SIZE = dpToPixels(9);
+        final int TEXT_HEIGHT = dpToPixels(12) * 3/4;
+        final int PADDING = dpToPixels(4);
+        final int LABEL_OFFSET = FRAME_RADIUS + PADDING + TEXT_HEIGHT;
 
         Map<String, Point> drawnPoints = new HashMap<>();
 
@@ -476,6 +581,11 @@ public class MainActivity extends BaseActivity {
             Paint backgroundPaint = getFillPaint(0x60ffffff);
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
+            Paint arrowPaint = getStrokePaint(0xff20a040, 3);
+            setDashPattern(arrowPaint, 2, 4);
+            Paint arrowOutlinePaint = getStrokePaint(0xc0ffffff, 3);
+            Paint selectedArrowOutlinePaint = getStrokePaint(0xffffffff, 2);
+            Paint arrowTextPaint = getTextPaint(0xff20a040, 12, FontStyle.BOLD, Align.CENTER);
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
             Paint arcPaint = getStrokePaint(0xffff0000, 2);
             Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
@@ -488,19 +598,24 @@ public class MainActivity extends BaseActivity {
             long now = System.currentTimeMillis();
 
             drawRect(canvas, canvasEnvelope, backgroundPaint);
+            int arrowSeconds = getArrowSeconds(boundingBox);
 
             for (String reporterId : mPositions.keySet()) {
                 LatLong position = mPositions.get(reporterId);
                 String label = mLabels.get(reporterId);
-                int cx = (int) (MercatorProjection.longitudeToPixelX(position.longitude, mapSize) - topLeftPoint.x);
-                int cy = (int) (MercatorProjection.latitudeToPixelY(position.latitude, mapSize) - topLeftPoint.y);
-                Point center = new Point(cx, cy);
+                Point center = toPixels(position, mapSize, topLeftPoint);
                 if (reporterId.equals(mSelectedReporterId)) {
                     selectedCenter = center;
                     continue;
                 }
                 if (canvasEnvelope.contains(center)) {
-                    drawnPoints.put(reporterId, center);
+                    int cx = (int) center.x;
+                    int cy = (int) center.y;
+                    LatLong reckonPos = deadReckon(mPoints.get(reporterId), arrowSeconds);
+                    Point arrowHead = toPixels(reckonPos, mapSize, topLeftPoint);
+
+                    drawArrowOutline(canvas, center, arrowHead, ARROW_TIP_SIZE, arrowOutlinePaint, 2);
+                    drawArrow(canvas, center, arrowHead, ARROW_TIP_SIZE, arrowPaint);
                     canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
@@ -509,6 +624,8 @@ public class MainActivity extends BaseActivity {
                         new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
                         270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
                     );
+
+                    drawnPoints.put(reporterId, center);
                 }
             }
 
@@ -528,6 +645,9 @@ public class MainActivity extends BaseActivity {
                 long minSinceReport = (now - mPoints.get(mSelectedReporterId).timeMillis) / 60000;
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
+                LatLong reckonPos = deadReckon(mPoints.get(mSelectedReporterId), arrowSeconds);
+                Point arrowHead = toPixels(reckonPos, mapSize, topLeftPoint);
+
                 Path path = AndroidGraphicFactory.INSTANCE.createPath();
                 int scale = FRAME_RADIUS / 2;
                 for (int xs = -1; xs <= 1; xs += 2) {
@@ -541,6 +661,33 @@ public class MainActivity extends BaseActivity {
                 Paint frameShadowPaint = getStrokePaint(0xffffffff, 2);
                 setShadowLayer(frameShadowPaint, SHADOW/2, 0, 0, 0xff000000);
                 canvas.drawPath(path, frameShadowPaint);
+
+                drawArrowOutline(canvas, selectedCenter, arrowHead, ARROW_TIP_SIZE, selectedArrowOutlinePaint, 2);
+                if (drawArrow(canvas, selectedCenter, arrowHead, ARROW_TIP_SIZE, arrowPaint)) {
+                    String arrowLabel = Utils.describePeriod(arrowSeconds * 1000, true);
+                    // Place above or below the arrowhead.
+                    int ax = (int) arrowHead.x;
+                    int ay = (int) arrowHead.y + (arrowHead.y > selectedCenter.y ? 1 : -1) * (TEXT_HEIGHT/2 + PADDING) + TEXT_HEIGHT/2;
+                    if (Math.abs(arrowHead.x - selectedCenter.x) > Math.abs(arrowHead.y - selectedCenter.y)) {
+                        // Place left or right of the arrowhead.
+                        int sx = arrowHead.x > selectedCenter.x ? 1 : -1;
+                        ax = (int) (arrowHead.x + sx * (PADDING + measureText(arrowTextPaint, arrowLabel) / 2));
+                        ay = (int) (arrowHead.y + TEXT_HEIGHT/2);
+                    }
+
+                    // Prevent collision with the marker label.
+                    double textWidth = measureText(textPaint, label) + measureText(arrowTextPaint, arrowLabel);
+                    if (ay > cy + FRAME_RADIUS && Math.abs(ax - cx) < textWidth/2 + PADDING) {
+                        if (ay > cy + LABEL_OFFSET) {  // nudge down
+                            ay = Math.max(ay, cy + LABEL_OFFSET + PADDING + TEXT_HEIGHT);
+                        } else {  // nudge up
+                            ay = Math.min(ay, cy + LABEL_OFFSET - PADDING - TEXT_HEIGHT);
+                        }
+                    }
+                    canvas.drawText(arrowLabel, ax, ay, selectedOutlinePaint);
+                    canvas.drawText(arrowLabel, ax, ay, arrowTextPaint);
+                }
+
                 canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                 canvas.drawCircle(cx, cy, DOT_RADIUS + 1, getStrokePaint(0xc0000000, 2));
                 canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
@@ -548,6 +695,7 @@ public class MainActivity extends BaseActivity {
                     new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
                     270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
                 );
+
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, selectedOutlinePaint);
                 canvas.drawPath(path, getStrokePaint(0xc0000000, 4));
                 canvas.drawPath(path, getStrokePaint(0xffffffff, 2));

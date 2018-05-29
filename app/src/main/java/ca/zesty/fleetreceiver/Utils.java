@@ -115,7 +115,13 @@ public class Utils {
 
     /** Describes a time period using a short phrase like "23 min". */
     public static String describePeriod(long elapsedMillis) {
+        return describePeriod(elapsedMillis, false);
+    }
+
+    /** Describes a time period using a short phrase like "23 min". */
+    public static String describePeriod(long elapsedMillis, boolean showSeconds) {
         long elapsedSec = elapsedMillis/1000;
+        if (elapsedSec < 60 && showSeconds) return format("%d sec", elapsedSec);
         if (elapsedSec < 3600) return format("%d min", elapsedSec/60);
         if (elapsedSec < 36000)
             return format("%.1f h", (float) elapsedSec/3600);
