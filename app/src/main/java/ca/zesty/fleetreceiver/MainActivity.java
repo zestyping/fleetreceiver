@@ -79,9 +79,9 @@ public class MainActivity extends BaseActivity {
     private AppDatabase mDb = AppDatabase.getDatabase(this);
     private MapView mMapView;
     private Map<String, Marker> mMarkers = new HashMap<>();
+    private List<String> mActiveReporterIds = new ArrayList<>();
+    private Map<String, PointEntity> mPointEntities = new HashMap<>();
     private Map<String, String> mLabels = new HashMap<>();
-    private Map<String, LatLong> mPositions = new HashMap<>();
-    private Map<String, PointEntity> mPoints = new HashMap<>();
     private String mSelectedReporterId = null;
     private Handler mHandler = null;
     private Runnable mRunnable = null;
@@ -331,18 +331,20 @@ public class MainActivity extends BaseActivity {
 
     void updateMarkers() {
         long now = System.currentTimeMillis();
-        mPositions.clear();
-        mPoints.clear();
-        mLabels.clear();
+        List<String> activeReporterIds = new ArrayList<>();
+        Map<String, PointEntity> pointEntities = new HashMap<>();
+        Map<String, String> labels = new HashMap<>();
+
         for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
             if (rp.point == null) continue;
-
-            LatLong position = new LatLong(rp.point.latitude, rp.point.longitude);
-            mPositions.put(rp.reporter.reporterId, position);
-            mPoints.put(rp.reporter.reporterId, rp.point);
-            mLabels.put(rp.reporter.reporterId, rp.reporter.label);
+            activeReporterIds.add(rp.reporter.reporterId);
+            pointEntities.put(rp.reporter.reporterId, rp.point);
+            labels.put(rp.reporter.reporterId, rp.reporter.label);
         }
-        if (mSelectedReporterId != null && !mPositions.containsKey(mSelectedReporterId)) {
+        mActiveReporterIds = activeReporterIds;  // this is iterated over; update it atomically
+        mPointEntities = pointEntities;
+        mLabels = labels;
+        if (mSelectedReporterId != null && !mActiveReporterIds.contains(mSelectedReporterId)) {
             // The selected reporter was deactivated or deleted.
             mSelectedReporterId = null;
             updateReporterFrame();
@@ -368,6 +370,11 @@ public class MainActivity extends BaseActivity {
         }
     }
 
+    LatLong getReporterPosition(String reporterId) {
+        PointEntity entity = mPointEntities.get(reporterId);
+        return entity != null ? new LatLong(entity.latitude, entity.longitude) : null;
+    }
+
     /** Zooms the map while holding the selected marker in a fixed position. */
     void zoom(int change) {
         MapViewPosition pos = mMapView.getModel().mapViewPosition;
@@ -377,7 +384,7 @@ public class MainActivity extends BaseActivity {
         if (newZoom > pos.getZoomLevelMax()) newZoom = pos.getZoomLevelMax();
         change = newZoom - zoom;
 
-        LatLong pivot = mPositions.get(mSelectedReporterId);
+        LatLong pivot = getReporterPosition(mSelectedReporterId);
         if (pivot == null) {
             pos.setZoomLevel(newZoom, true);
             return;
@@ -570,8 +577,8 @@ public class MainActivity extends BaseActivity {
         double bottomWidthMeters = EARTH_RADIUS * Math.cos(box.minLatitude *DEGREE) * box.getLongitudeSpan() *DEGREE;
         double dimension = Math.min(Math.min(topWidthMeters, bottomWidthMeters), heightMeters);
         double maxSpeedKmh = 30;
-        for (PointEntity point : mPoints.values()) {
-            maxSpeedKmh = Math.max(maxSpeedKmh, point.speedKmh);
+        for (String reporterId : mActiveReporterIds) {
+            maxSpeedKmh = Math.max(maxSpeedKmh, mPointEntities.get(reporterId).speedKmh);
         }
         double maxSeconds = (dimension / 3) / (maxSpeedKmh * 1000 / 3600);
         for (int seconds : new int[] {3600, 1800, 900, 600, 300, 120, 60, 30, 15, 10, 5, 2, 1}) {
@@ -611,7 +618,7 @@ public class MainActivity extends BaseActivity {
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
             Paint arrowPaint = getStrokePaint(0xff20a040, 3);
-            Paint trackPaint = getStrokePaint(0xc020a040, 3);
+            Paint trackPaint = getStrokePaint(0xc020a040, 3, Cap.ROUND);
             setDashPattern(trackPaint, 2, 6);
             Paint arrowOutlinePaint = getStrokePaint(0xc0ffffff, 3);
             Paint selectedArrowOutlinePaint = getStrokePaint(0xffffffff, 2);
@@ -629,8 +636,8 @@ public class MainActivity extends BaseActivity {
             drawRect(canvas, canvasEnvelope, backgroundPaint);
             int arrowSeconds = getArrowSeconds(boundingBox);
 
-            for (String reporterId : mPositions.keySet()) {
-                LatLong position = mPositions.get(reporterId);
+            for (String reporterId : mActiveReporterIds) {
+                LatLong position = getReporterPosition(reporterId);
                 String label = mLabels.get(reporterId);
                 Point center = toPixels(position, mapSize, topLeftPoint);
                 if (reporterId.equals(mSelectedReporterId)) {
@@ -640,7 +647,7 @@ public class MainActivity extends BaseActivity {
                 if (canvasEnvelope.contains(center)) {
                     int cx = (int) center.x;
                     int cy = (int) center.y;
-                    LatLong reckonPos = deadReckon(mPoints.get(reporterId), arrowSeconds);
+                    LatLong reckonPos = deadReckon(mPointEntities.get(reporterId), arrowSeconds);
                     Point arrowHead = toPixels(reckonPos, mapSize, topLeftPoint);
 
                     drawArrowOutline(canvas, center, arrowHead, ARROW_TIP_SIZE, arrowOutlinePaint, 2);
@@ -648,7 +655,7 @@ public class MainActivity extends BaseActivity {
                     canvas.drawText(label, cx, cy + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                     canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
-                    drawStalenessArc(canvas, cx, cy, mPoints.get(reporterId).timeMillis);
+                    drawStalenessArc(canvas, cx, cy, mPointEntities.get(reporterId).timeMillis);
 
                     drawnPoints.put(reporterId, center);
                 }
@@ -666,11 +673,11 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedCenter != null) {
-                long timeMillis = mPoints.get(mSelectedReporterId).timeMillis;
+                long timeMillis = mPointEntities.get(mSelectedReporterId).timeMillis;
                 String label = mLabels.get(mSelectedReporterId) + " (" + Utils.describeTime(timeMillis) + ")";
                 int cx = (int) selectedCenter.x;
                 int cy = (int) selectedCenter.y;
-                LatLong reckonPos = deadReckon(mPoints.get(mSelectedReporterId), arrowSeconds);
+                LatLong reckonPos = deadReckon(mPointEntities.get(mSelectedReporterId), arrowSeconds);
                 Point arrowHead = toPixels(reckonPos, mapSize, topLeftPoint);
 
                 Path track = AndroidGraphicFactory.INSTANCE.createPath();
@@ -740,7 +747,7 @@ public class MainActivity extends BaseActivity {
             String lastSelected = mSelectedReporterId;
             mSelectedReporterId = null;
             for (String reporterId : drawnPoints.keySet()) {
-                LatLong position = mPositions.get(reporterId);
+                LatLong position = getReporterPosition(reporterId);
                 Point point = mMapView.getMapViewProjection().toPixels(position);
                 if (Math.abs(point.x - tapPoint.x) < TAP_RADIUS &&
                     Math.abs(point.y - tapPoint.y) < TAP_RADIUS &&
