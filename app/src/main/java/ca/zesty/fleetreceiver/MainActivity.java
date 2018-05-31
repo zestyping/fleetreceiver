@@ -355,11 +355,18 @@ public class MainActivity extends BaseActivity {
             u.showFrameChild(R.id.reporter_details);
             ReporterEntity r = mDb.getReporterDao().get(mSelectedReporterId);
             PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
-            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
-            u.setText(R.id.speed_details, Utils.format("as of " + Utils.describeTime(p.timeMillis)));
+            u.setText(R.id.label, r.label);
+            long minSinceReport = (System.currentTimeMillis() - p.timeMillis) / MINUTE;
+            long expectedIntervalMin = u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10);
+            u.setText(R.id.label_details,
+                Utils.format("last report " + Utils.describeTime(p.timeMillis)),
+                minSinceReport > expectedIntervalMin ? 0xffe04020 : 0x8a000000);
             long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
-            u.setText(R.id.motion, Utils.describePeriod(System.currentTimeMillis() - lastTransitionMillis));
-            u.setText(R.id.motion_details, p.isResting() ? "stopped at this spot" : "in motion");
+            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
+            u.setText(R.id.speed_details,
+                (p.isResting() ? "stopped" : "started") + " moving " +
+                Utils.describeTime(lastTransitionMillis)
+            );
         }
     }
 

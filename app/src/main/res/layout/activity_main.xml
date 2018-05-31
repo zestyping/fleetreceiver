@@ -87,7 +87,7 @@
 
       <TableRow>
         <TextView
-            android:id="@+id/speed"
+            android:id="@+id/label"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -96,7 +96,7 @@
             android:textSize="25sp" />
 
         <TextView
-            android:id="@+id/motion"
+            android:id="@+id/speed"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -107,7 +107,7 @@
 
       <TableRow>
         <TextView
-            android:id="@+id/speed_details"
+            android:id="@+id/label_details"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -116,7 +116,7 @@
             android:textSize="16sp" />
 
         <TextView
-            android:id="@+id/motion_details"
+            android:id="@+id/speed_details"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
