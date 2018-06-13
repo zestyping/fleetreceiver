@@ -289,7 +289,7 @@ public class MainActivity extends BaseActivity {
             if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
         }
         if (positions.size() > 0) {
-            BoundingBox bounds = new BoundingBox(positions);
+            BoundingBox bounds = new BoundingBox(positions).extendMargin(1.2f);
             mMapView.setCenter(bounds.getCenterPoint());
             int zoomLevel = mMapView.getModel().mapViewPosition.getZoomLevel();
             int tileSize = mMapView.getModel().displayModel.getTileSize();
