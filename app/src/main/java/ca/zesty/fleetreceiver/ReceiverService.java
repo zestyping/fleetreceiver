@@ -24,10 +24,11 @@ public class ReceiverService extends BaseService {
     private boolean mStarted = false;
     private PowerManager.WakeLock mWakeLock = null;
     private int mNumReceived = 0;
-    private AppDatabase mDb = AppDatabase.getDatabase(this);
+    private AppDatabase mDb;
 
     @Override public void onCreate() {
         super.onCreate();
+        mDb = AppDatabase.getDatabase(this);
 
         registerReceiver(mSmsPointReceiver, Utils.getMaxPrioritySmsFilter());
         registerReceiver(mReporterRegisteredReceiver, new IntentFilter(

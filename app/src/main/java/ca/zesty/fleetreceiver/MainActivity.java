@@ -82,7 +82,7 @@ public class MainActivity extends BaseActivity {
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
-    private AppDatabase mDb = AppDatabase.getDatabase(this);
+    private AppDatabase mDb;
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
@@ -93,6 +93,7 @@ public class MainActivity extends BaseActivity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Fabric.with(this, new Crashlytics());
+        mDb = AppDatabase.getDatabase(this);
         setContentView(R.layout.activity_main);
         setTitle("Fleet Receiver " + BuildConfig.VERSION_NAME);
 
