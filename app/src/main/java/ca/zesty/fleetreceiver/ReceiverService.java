@@ -107,6 +107,10 @@ public class ReceiverService extends BaseService {
                     savePoints(reporter, points);
                 }
             }
+
+            if (body.trim().startsWith("crash test dummy")) {
+                throw new RuntimeException("crash test dummy");
+            }
         }
 
         private void savePoints(ReporterEntity reporter, List<PointEntity> points) {

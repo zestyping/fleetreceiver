@@ -21,6 +21,8 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.TextView;
 
+import com.crashlytics.android.Crashlytics;
+
 import org.mapsforge.core.graphics.Align;
 import org.mapsforge.core.graphics.Canvas;
 import org.mapsforge.core.graphics.FontFamily;
@@ -63,6 +65,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.fabric.sdk.android.Fabric;
 
 public class MainActivity extends BaseActivity {
     static final String TAG = "MainActivity";
@@ -89,6 +92,7 @@ public class MainActivity extends BaseActivity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Fabric.with(this, new Crashlytics());
         setContentView(R.layout.activity_main);
         setTitle("Fleet Receiver " + BuildConfig.VERSION_NAME);
 

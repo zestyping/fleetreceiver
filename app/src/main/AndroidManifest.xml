@@ -34,6 +34,9 @@
         android:name=".SettingsActivity"
         android:parentActivityName=".MainActivity" />
     <service android:name=".ReceiverService" />
+    <meta-data
+        android:name="io.fabric.ApiKey"
+        android:value="1376d0890b7b06375657c51fc5908f3c6d840a37" />
   </application>
 
 </manifest>
