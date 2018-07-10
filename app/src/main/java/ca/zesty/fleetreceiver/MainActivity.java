@@ -110,9 +110,9 @@ public class MainActivity extends BaseActivity {
         AndroidGraphicFactory.createInstance(getApplication());
         mMapView = (MapView) findViewById(R.id.map);
         initializeMap();
-        startService(new Intent(getApplicationContext(), ReceiverService.class));
+        startService(new Intent(getApplicationContext(), NotificationService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
-        registerReceiver(mPointsAddedReceiver, new IntentFilter(ReceiverService.ACTION_FLEET_RECEIVER_POINTS_ADDED));
+        registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsPointReceiver.ACTION_FLEET_RECEIVER_POINTS_ADDED));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {

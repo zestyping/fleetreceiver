@@ -23,8 +23,8 @@
         android:launchMode="singleTop"
         android:screenOrientation="portrait">
       <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
     <activity
@@ -33,7 +33,12 @@
     <activity
         android:name=".SettingsActivity"
         android:parentActivityName=".MainActivity" />
-    <service android:name=".ReceiverService" />
+    <receiver android:name=".SmsPointReceiver">
+      <intent-filter android:priority="2147483647">
+        <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+      </intent-filter>
+    </receiver>
+    <service android:name=".NotificationService" />
     <meta-data
         android:name="io.fabric.ApiKey"
         android:value="1376d0890b7b06375657c51fc5908f3c6d840a37" />
