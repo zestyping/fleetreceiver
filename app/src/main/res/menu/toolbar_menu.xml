@@ -11,8 +11,8 @@
       app:showAsAction="never"/>
 
   <item
-      android:id="@+id/action_add_map_data"
-      android:title="Add map data"
+      android:id="@+id/action_load_map_data"
+      android:title="Load map data"
       app:showAsAction="never"/>
 
   <item

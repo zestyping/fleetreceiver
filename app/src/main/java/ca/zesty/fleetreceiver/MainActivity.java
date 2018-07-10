@@ -174,13 +174,16 @@ public class MainActivity extends BaseActivity {
         if (item.getItemId() == R.id.action_registration) {
             startActivity(new Intent(this, RegistrationActivity.class));
         }
-        if (item.getItemId() == R.id.action_add_map_data) {
-            u.showMessageBox("Add map data",
-                "To add data to the map, please download any MapsForge file " +
-                "with a filename ending in \".map\" and leave it in your " +
-                "Download folder.\n\n" +
-                "This map will load and show the information from all the " +
-                "\".map\" files in your Download folder.");
+        if (item.getItemId() == R.id.action_load_map_data) {
+            List<File> loadedFiles = new ArrayList<>();
+            reloadMapData(loadedFiles);
+            String message = "Loaded map data from:\n";
+            for (File file : loadedFiles) {
+                message += "    \u2022 " + file.getName() + "\n";
+            }
+            message += "\nTo add more map data, download any MapsForge file with a " +
+                "filename ending in \".map\" and leave it in your Download folder.";
+            u.showMessageBox("Load map data", message);
         }
         if (item.getItemId() == R.id.action_settings) {
             startActivity(new Intent(this, SettingsActivity.class));
@@ -188,21 +191,27 @@ public class MainActivity extends BaseActivity {
         return false;
     }
 
-    void initializeMap() {
+    MapDataStore reloadMapData(List<File> loadedFiles) {
         TileCache tileCache = AndroidUtil.createTileCache(this, "mapcache",
             mMapView.getModel().displayModel.getTileSize(), 1f,
             mMapView.getModel().frameBufferModel.getOverdrawFactor());
-        final MultiMapDataStore multiMap = new MultiMapDataStore(
+        MultiMapDataStore multiMap = new MultiMapDataStore(
             MultiMapDataStore.DataPolicy.RETURN_ALL);
-        addMapFile(multiMap, getAssetFile("world.map"));
+        addMapFile(multiMap, getAssetFile("world.map"), loadedFiles);
         addMapFilesInDir(multiMap, Environment.getExternalStoragePublicDirectory(
-            Environment.DIRECTORY_DOWNLOADS));
+            Environment.DIRECTORY_DOWNLOADS), loadedFiles);
         TileRendererLayer tileRendererLayer = new TileRendererLayer(tileCache, multiMap,
             mMapView.getModel().mapViewPosition, AndroidGraphicFactory.INSTANCE);
         tileRendererLayer.setXmlRenderTheme(InternalRenderTheme.DEFAULT);
 
+        mMapView.getLayerManager().getLayers().clear();
         mMapView.addLayer(tileRendererLayer);
         mMapView.addLayer(new ReporterLayer());
+        return multiMap;
+    }
+
+    void initializeMap() {
+        final MapDataStore multiMap = reloadMapData(new ArrayList<File>());
         mMapView.setClickable(true);
         mMapView.getMapScaleBar().setVisible(true);
         mMapView.setBuiltInZoomControls(true);
@@ -229,26 +238,26 @@ public class MainActivity extends BaseActivity {
         });
     }
 
-    void addMapFilesInDir(MultiMapDataStore multiMap, File dir) {
+    static void addMapFilesInDir(MultiMapDataStore multiMap, File dir, List<File> loadedFiles) {
         File[] files = dir.listFiles();
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
-                    addMapFilesInDir(multiMap, file);
+                    addMapFilesInDir(multiMap, file, loadedFiles);
                 }
                 if (file.isFile() && file.getName().toLowerCase().endsWith(".map")) {
-
-                    addMapFile(multiMap, file);
+                    addMapFile(multiMap, file, loadedFiles);
                 }
             }
         }
     }
 
-    void addMapFile(MultiMapDataStore multiMap, File file) {
+    static void addMapFile(MultiMapDataStore multiMap, File file, List<File> loadedFiles) {
         try {
             MapDataStore map = new MapFile(file);
             multiMap.addMapDataStore(map, true, true);
             Log.i(TAG, "Loaded map from " + file.getAbsolutePath());
+            loadedFiles.add(file);
         } catch (Exception e) {
             Log.e(TAG, "Could not load map from " + file.getAbsolutePath(), e);
             e.printStackTrace();
