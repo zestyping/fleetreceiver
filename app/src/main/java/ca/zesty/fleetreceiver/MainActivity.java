@@ -596,10 +596,10 @@ public class MainActivity extends BaseActivity {
             maxSpeedKmh = Math.max(maxSpeedKmh, rp.point.speedKmh);
         }
         double maxSeconds = (dimension / 3) / (maxSpeedKmh * 1000 / 3600);
-        for (int seconds : new int[] {3600, 1800, 900, 600, 300, 120, 60, 30, 15, 10, 5, 2, 1}) {
+        for (int seconds : new int[] {3600, 1800, 900, 600, 300, 120, 60}) {
             if (seconds < maxSeconds) return seconds;
         }
-        return 1;
+        return 60;
     }
 
     class ReporterLayer extends Layer {
