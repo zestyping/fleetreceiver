@@ -1,6 +1,7 @@
 package ca.zesty.fleetreceiver;
 
 import android.app.Activity;
+import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -175,6 +176,10 @@ public class Utils {
         this.context = activity;
     }
 
+    public AlarmManager getAlarmManager() {
+        return (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+    }
+
     public LocationManager getLocationManager() {
         return (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
     }
@@ -220,7 +225,7 @@ public class Utils {
     }
 
     /** Gets the appropriate SmsManager to use for sending text messages.
-        From PataBasi by Kristen Tonga. */
+     From PataBasi by Kristen Tonga. */
     public SmsManager getSmsManager() {
         if (android.os.Build.VERSION.SDK_INT >= 22) {
             int subscriptionId = SmsManager.getDefaultSmsSubscriptionId();
@@ -245,6 +250,10 @@ public class Utils {
 
     public String getPref(String key, String defaultValue) {
         return getPrefs().getString(key, defaultValue);
+    }
+
+    public boolean getBooleanPref(String key, boolean defaultValue) {
+        return getPrefs().getBoolean(key, defaultValue);
     }
 
     public int getIntPref(String key, int defaultValue) {
@@ -275,13 +284,16 @@ public class Utils {
     }
 
     public void hide(int id) {
-        if (activity == null) return;
-        activity.findViewById(id).setVisibility(View.GONE);
+        show(id, false);
     }
 
     public void show(int id) {
+        show(id, true);
+    }
+
+    public void show(int id, boolean visible) {
         if (activity == null) return;
-        activity.findViewById(id).setVisibility(View.VISIBLE);
+        activity.findViewById(id).setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     public void setText(int id, String text) {

@@ -135,6 +135,7 @@ public class MainActivity extends BaseActivity {
     @Override protected void onResume() {
         super.onResume();
         mHandler.postDelayed(mRunnable, 0);
+        u.show(R.id.message_log, u.getBooleanPref(Prefs.SHOW_LOG, false));
     }
 
     @Override protected void onPause() {

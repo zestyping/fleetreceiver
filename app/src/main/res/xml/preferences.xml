@@ -11,4 +11,14 @@
       android:inputType="numberDecimal"
       android:defaultValue="10" />
 
+
+  <PreferenceScreen
+      android:title="Developer settings">
+
+    <CheckBoxPreference
+        android:key="pref_show_log"
+        android:title="Show message log"
+        android:defaultValue="false" />
+  </PreferenceScreen>
+
 </PreferenceScreen>
