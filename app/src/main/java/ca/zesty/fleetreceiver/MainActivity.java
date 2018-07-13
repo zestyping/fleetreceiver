@@ -82,7 +82,6 @@ public class MainActivity extends BaseActivity {
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
-    private AppDatabase mDb;
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
@@ -93,7 +92,6 @@ public class MainActivity extends BaseActivity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Fabric.with(this, new Crashlytics());
-        mDb = AppDatabase.getDatabase(this);
         setContentView(R.layout.activity_main);
         setTitle("Fleet Receiver " + BuildConfig.VERSION_NAME);
 
@@ -300,8 +298,13 @@ public class MainActivity extends BaseActivity {
 
     boolean zoomToAllPoints() {
         List<LatLong> positions = new ArrayList<>();
-        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
-            if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
+        AppDatabase db = AppDatabase.getDatabase(this);
+        try {
+            for (ReporterEntity.WithPoint rp : db.getReporterDao().getAllActiveWithLatestPoints()) {
+                if (rp.point != null) positions.add(new LatLong(rp.point.latitude, rp.point.longitude));
+            }
+        } finally {
+            db.close();
         }
         if (positions.size() > 0) {
             BoundingBox bounds = new BoundingBox(positions).extendMargin(1.2f);
@@ -346,10 +349,13 @@ public class MainActivity extends BaseActivity {
 
     void updateMarkers() {
         Map<String, ReporterEntity.WithPoint> reporterPoints = new HashMap<>();
-
-        for (ReporterEntity.WithPoint rp : mDb.getReporterDao().getAllActiveWithLatestPoints()) {
-            if (rp.point == null) continue;
-            reporterPoints.put(rp.reporter.reporterId, rp);
+        AppDatabase db = AppDatabase.getDatabase(this);
+        try {
+            for (ReporterEntity.WithPoint rp : db.getReporterDao().getAllActiveWithLatestPoints()) {
+                if (rp.point != null) reporterPoints.put(rp.reporter.reporterId, rp);
+            }
+        } finally {
+            db.close();
         }
         mReporterPoints = reporterPoints;  // this is iterated over; update it atomically
         if (mSelectedReporterId != null && !mReporterPoints.containsKey(mSelectedReporterId)) {
@@ -361,27 +367,34 @@ public class MainActivity extends BaseActivity {
     }
 
     void updateReporterFrame() {
-        if (mSelectedReporterId == null) {
-            u.showFrameChild(R.id.reporter_summary);
-            u.setText(R.id.registered_count, "" + mDb.getReporterDao().getAllActive().size());
-            long oneHourAgo = System.currentTimeMillis() - 60 * 60 * 1000;
-            u.setText(R.id.reported_count, "" + mDb.getReporterDao().getAllReportedSince(oneHourAgo).size());
-        } else {
-            u.showFrameChild(R.id.reporter_details);
-            ReporterEntity r = mDb.getReporterDao().get(mSelectedReporterId);
-            PointEntity p = mDb.getPointDao().getLatestPointForReporter(mSelectedReporterId);
-            u.setText(R.id.label, r.label);
-            long minSinceReport = (System.currentTimeMillis() - p.timeMillis) / MINUTE;
-            long expectedIntervalMin = u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10);
-            u.setText(R.id.label_details,
-                Utils.format("last report " + Utils.describeTime(p.timeMillis)),
-                minSinceReport > expectedIntervalMin ? 0xffe04020 : 0x8a000000);
-            long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
-            u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
-            u.setText(R.id.speed_details,
-                (p.isResting() ? "stopped" : "started") + " moving " +
-                Utils.describeTime(lastTransitionMillis)
-            );
+        AppDatabase db = AppDatabase.getDatabase(this);
+        try {
+            if (mSelectedReporterId == null) {
+                u.showFrameChild(R.id.reporter_summary);
+                u.setText(R.id.registered_count, "" + db.getReporterDao().getAllActive().size());
+
+                long oneHourAgo = System.currentTimeMillis() - 60*60*1000;
+                u.setText(R.id.reported_count, "" + db.getReporterDao().getAllReportedSince(oneHourAgo).size());
+            } else {
+                u.showFrameChild(R.id.reporter_details);
+                ReporterEntity r = db.getReporterDao().get(mSelectedReporterId);
+                PointEntity p = db.getPointDao().getLatestPointForReporter(mSelectedReporterId);
+                u.setText(R.id.label, r.label);
+                long minSinceReport = (System.currentTimeMillis() - p.timeMillis)/MINUTE;
+                long expectedIntervalMin = u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10);
+                u.setText(R.id.label_details,
+                    Utils.format("last report " + Utils.describeTime(p
+                        .timeMillis)),
+                    minSinceReport > expectedIntervalMin ? 0xffe04020 : 0x8a000000);
+                long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
+                u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
+                u.setText(R.id.speed_details,
+                    (p.isResting() ? "stopped" : "started") + " moving " +
+                        Utils.describeTime(lastTransitionMillis)
+                );
+            }
+        } finally {
+            db.close();
         }
     }
 
@@ -704,11 +717,16 @@ public class MainActivity extends BaseActivity {
 
                 Path track = AndroidGraphicFactory.INSTANCE.createPath();
                 boolean first = true;
-                for (PointEntity point : mDb.getPointDao().getAllForReporterSince(mSelectedReporterId, now - HOUR)) {
-                    Point pt = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPt);
-                    if (first) track.moveTo((float) pt.x, (float) pt.y);
-                    else track.lineTo((float) pt.x, (float) pt.y);
-                    first = false;
+                AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
+                try {
+                    for (PointEntity point : db.getPointDao().getAllForReporterSince(mSelectedReporterId, now - HOUR)) {
+                        Point pt = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPt);
+                        if (first) track.moveTo((float) pt.x, (float) pt.y);
+                        else track.lineTo((float) pt.x, (float) pt.y);
+                        first = false;
+                    }
+                } finally {
+                    db.close();
                 }
                 canvas.drawPath(track, trackPaint);
 

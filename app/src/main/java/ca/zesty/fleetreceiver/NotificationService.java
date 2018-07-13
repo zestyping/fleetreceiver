@@ -58,13 +58,17 @@ public class NotificationService extends BaseService {
         PendingIntent pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
 
+        String message;
         AppDatabase db = AppDatabase.getDatabase(this);
-        int registeredCount = db.getReporterDao().getAllActive().size();
-        long oneHourAgo = System.currentTimeMillis() - 60 * 60 * 1000;
-        int reportedCount = db.getReporterDao().getAllReportedSince(oneHourAgo).size();
-
-        String message = "Reporters registered: " + registeredCount +
-            ".  Reported in last hour: " + reportedCount + ".";
+        try {
+            int registeredCount = db.getReporterDao().getAllActive().size();
+            long oneHourAgo = System.currentTimeMillis() - 60*60*1000;
+            int reportedCount = db.getReporterDao().getAllReportedSince(oneHourAgo).size();
+            message = Utils.format("Reporters registered: %d. Reported in last hour: %d.",
+                registeredCount, reportedCount);
+        } finally {
+            db.close();
+        }
 
         return new NotificationCompat.Builder(this)
             .setContentTitle("Fleet Receiver")

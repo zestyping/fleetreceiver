@@ -5,20 +5,24 @@ import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
+import android.provider.Settings;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.InputFilter;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -26,6 +30,8 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
@@ -196,6 +202,23 @@ public class Utils {
         return (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
     }
 
+    public boolean isAccessibilityServiceEnabled(Class cls) {
+        ContentResolver resolver = context.getApplicationContext().getContentResolver();
+        String expectedServiceName = context.getPackageName() + "/" + cls.getCanonicalName();
+        String serviceNames = "";
+        try {
+            if (Settings.Secure.getInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED) == 1) {
+                serviceNames = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            }
+        } catch (Settings.SettingNotFoundException e) {
+            return false;
+        }
+        for (String name : serviceNames.split(":")) {
+            if (name.equals(expectedServiceName)) return true;
+        }
+        return false;
+    }
+
     /** Sends a text message using the default SmsManager. */
     public void sendSms(String recipient, String body) {
         sendSms(recipient, body, null);
@@ -206,6 +229,24 @@ public class Utils {
         PendingIntent sentIntent = sentBroadcastIntent == null ? null :
             PendingIntent.getBroadcast(context, 0, sentBroadcastIntent, PendingIntent.FLAG_ONE_SHOT);
         getSmsManager().sendTextMessage(recipient, null, body, sentIntent, null);
+    }
+
+    /** Gets the GSM subscriber ID for a given SIM slot number (0, 1, etc.). */
+    public String getSubscriberId(int slot) {
+        if (android.os.Build.VERSION.SDK_INT >= 22) {
+            SubscriptionInfo sub = SubscriptionManager.from(
+                context).getActiveSubscriptionInfoForSimSlotIndex(slot);
+            try {
+                // The TelephonyManager.getSubscriberId(int) method is public but hidden.
+                Class cls = Class.forName("android.telephony.TelephonyManager");
+                Method method = cls.getMethod("getSubscriberId", new Class[] {int.class});
+                Object result = method.invoke(getTelephonyManager(), new Object[] {sub.getSubscriptionId()});
+                return (String) result;
+            } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+                Log.e("Utils", "Failed to look up subscriber ID for slot " + slot, e);
+            }
+        }
+        return getTelephonyManager().getSubscriberId();
     }
 
     /** Gets the mobile number from which this device sends text messages. */
@@ -276,6 +317,15 @@ public class Utils {
         getPrefs().edit().putString(key, value).commit();
     }
 
+    public void sendUssd(int slot, String code) {
+        Log.i("Utils", "Slot " + slot + ": sending USSD code " + code);
+        Intent intent = new Intent(Intent.ACTION_CALL);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);  // required to start an Activity from a non-Activity context
+        intent.setData(Uri.parse("tel:" + Uri.encode(code)));
+        intent.putExtra("simSlot", slot);  // understood by Samsung Duo phones only
+        context.startActivity(intent);
+    }
+
 
     // ==== UI ====
 
@@ -324,13 +374,18 @@ public class Utils {
         child.setVisibility(View.VISIBLE);
     }
 
-    /** Shows a simple message box with an OK button. */
-    public void showMessageBox(String title, String message) {
+    /** Shows a message box with a single button that invokes the given listener. */
+    public void showMessageBox(String title, String message, String buttonLabel, DialogInterface.OnClickListener listener) {
         new AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton(buttonLabel, listener)
             .show();
+    }
+
+    /** Shows a simple message box with an OK button. */
+    public void showMessageBox(String title, String message) {
+        showMessageBox(title, message, "OK", null);
     }
 
     /** Shows a simple prompt dialog with a single text entry field. */

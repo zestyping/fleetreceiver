@@ -25,28 +25,32 @@ public class SmsPointReceiver extends BroadcastReceiver {
         String sender = sms.getDisplayOriginatingAddress();
         String body = sms.getMessageBody();
         Log.i(TAG, "SMS from " + sender + ": " + body);
+
         AppDatabase db = AppDatabase.getDatabase(context);
-
-        List<ReporterEntity> reporters = db.getReporterDao().getActiveByMobileNumber(sender);
-        if (reporters.size() == 1) {
-            ReporterEntity reporter = reporters.get(0);
-            List<PointEntity> points = new ArrayList<>();
-            for (String part : body.trim().split(" +")) {
-                PointEntity point = PointEntity.parse(reporter.reporterId, part);
-                if (point != null) points.add(point);
-            }
-            Log.i(TAG, "points received: " + points.size());
-            if (points.size() > 0) {
-                db.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
-                PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);
-                reporter.latestPointId = latestPoint.pointId;
-                db.getReporterDao().update(reporter);
-
-                for (PointEntity point : points) {
-                    MainActivity.postLogMessage(context, reporter.label + ": " + point);
+        try {
+            List<ReporterEntity> reporters = db.getReporterDao().getActiveByMobileNumber(sender);
+            if (reporters.size() == 1) {
+                ReporterEntity reporter = reporters.get(0);
+                List<PointEntity> points = new ArrayList<>();
+                for (String part : body.trim().split(" +")) {
+                    PointEntity point = PointEntity.parse(reporter.reporterId, part);
+                    if (point != null) points.add(point);
                 }
-                context.sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_POINTS_ADDED));
+                Log.i(TAG, "points received: " + points.size());
+                if (points.size() > 0) {
+                    db.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
+                    PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);
+                    reporter.latestPointId = latestPoint.pointId;
+                    db.getReporterDao().update(reporter);
+
+                    for (PointEntity point : points) {
+                        MainActivity.postLogMessage(context, reporter.label + ": " + point);
+                    }
+                    context.sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_POINTS_ADDED));
+                }
             }
+        } finally {
+            db.close();
         }
 
         if (body.trim().startsWith("crash test dummy")) {
