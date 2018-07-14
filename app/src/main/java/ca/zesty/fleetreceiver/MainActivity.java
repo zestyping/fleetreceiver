@@ -373,7 +373,7 @@ public class MainActivity extends BaseActivity {
                 u.showFrameChild(R.id.reporter_summary);
                 u.setText(R.id.registered_count, "" + db.getReporterDao().getAllActive().size());
 
-                long oneHourAgo = System.currentTimeMillis() - 60*60*1000;
+                long oneHourAgo = System.currentTimeMillis() - HOUR;
                 u.setText(R.id.reported_count, "" + db.getReporterDao().getAllReportedSince(oneHourAgo).size());
             } else {
                 u.showFrameChild(R.id.reporter_details);
@@ -715,11 +715,12 @@ public class MainActivity extends BaseActivity {
                     reporterPoints.get(mSelectedReporterId).point, arrowSeconds);
                 Point arrowHead = toPixels(reckonPos, mapSize, topLeftPt);
 
-                Path track = AndroidGraphicFactory.INSTANCE.createPath();
                 boolean first = true;
+                long startMillis = now - u.getIntPref(Prefs.HISTORICAL_TRACK_HOURS, 24) * HOUR;
+                Path track = AndroidGraphicFactory.INSTANCE.createPath();
                 AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
                 try {
-                    for (PointEntity point : db.getPointDao().getAllForReporterSince(mSelectedReporterId, now - HOUR)) {
+                    for (PointEntity point : db.getPointDao().getAllForReporterSince(mSelectedReporterId, startMillis)) {
                         Point pt = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPt);
                         if (first) track.moveTo((float) pt.x, (float) pt.y);
                         else track.lineTo((float) pt.x, (float) pt.y);

@@ -6,11 +6,18 @@
   <EditTextPreference
       android:key="pref_expected_reporting_interval"
       android:title="Expected reporting interval"
-      android:summary="Maximum number of minutes between expected points"
+      android:summary="Expected maximum minutes between points"
       android:numeric="decimal"
       android:inputType="numberDecimal"
       android:defaultValue="10" />
 
+  <EditTextPreference
+      android:key="pref_historical_track_hours"
+      android:title="History track length"
+      android:summary="Hours of historical track to show on the map"
+      android:numeric="decimal"
+      android:inputType="numberDecimal"
+      android:defaultValue="24" />
 
   <PreferenceScreen
       android:title="Developer settings">
