@@ -28,9 +28,9 @@ public class SmsPointReceiver extends BroadcastReceiver {
 
         AppDatabase db = AppDatabase.getDatabase(context);
         try {
-            List<ReporterEntity> reporters = db.getReporterDao().getActiveByMobileNumber(sender);
-            if (reporters.size() == 1) {
-                ReporterEntity reporter = reporters.get(0);
+            MobileNumberEntity mobileNumber = db.getMobileNumberDao().get(sender);
+            ReporterEntity reporter = db.getReporterDao().get(mobileNumber != null ? mobileNumber.reporterId : null);
+            if (reporter != null) {
                 List<PointEntity> points = new ArrayList<>();
                 for (String part : body.trim().split(" +")) {
                     PointEntity point = PointEntity.parse(reporter.reporterId, part);
@@ -41,8 +41,7 @@ public class SmsPointReceiver extends BroadcastReceiver {
                     db.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
                     PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);
                     reporter.latestPointId = latestPoint.pointId;
-                    db.getReporterDao().update(reporter);
-
+                    db.getReporterDao().put(reporter);
                     for (PointEntity point : points) {
                         MainActivity.postLogMessage(context, reporter.label + ": " + point);
                     }

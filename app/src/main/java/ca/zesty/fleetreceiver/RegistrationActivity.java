@@ -8,7 +8,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.telephony.SmsMessage;
 import android.text.InputFilter;
-import android.text.Spanned;
 import android.view.LayoutInflater;
 import android.widget.TableLayout;
 import android.widget.TableRow;
@@ -77,11 +76,17 @@ public class RegistrationActivity extends BaseActivity {
             table.addView(row);
         }
         for (ReporterEntity reporter : reporters) {
-            TableRow row = (TableRow) inflater.inflate(R.layout.reporter_row, null);
-            u.setText(row, R.id.activation_time, Utils.describeTime(reporter.activationMillis));
-            u.setText(row, R.id.reporter_label, reporter.label);
-            u.setText(row, R.id.reporter_number, reporter.mobileNumber);
-            table.addView(row);
+            boolean firstRow = true;
+            for (MobileNumberEntity mobileNumbers : mDb.getMobileNumberDao().getAllByReporterId(reporter.reporterId)) {
+                TableRow row = (TableRow) inflater.inflate(R.layout.reporter_row, null);
+                if (firstRow) {
+                    u.setText(row, R.id.activation_time, Utils.describeTime(reporter.activationMillis));
+                    u.setText(row, R.id.reporter_label, reporter.label);
+                }
+                u.setText(row, R.id.reporter_number, mobileNumbers.number);
+                table.addView(row);
+                firstRow = false;
+            }
         }
     }
 
@@ -121,52 +126,53 @@ public class RegistrationActivity extends BaseActivity {
             }
         }
 
-        private void promptForLabelAndAssignId(final String mobileNumber) {
+        private void promptForLabelAndAssignId(final String number) {
             String label = "";
-            List<ReporterEntity> reporters = mDb.getReporterDao().getActiveByMobileNumber(mobileNumber);
-            if (reporters.size() == 1) label = reporters.get(0).label;
+            MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
+            if (mobileNumber != null) {
+                ReporterEntity reporter = mDb.getReporterDao().get(mobileNumber.reporterId);
+                if (reporter != null) label = reporter.label;
+            }
             u.promptForString(
                 "Register a Reporter",
-                "Enter the label for " + mobileNumber + ":",
+                "Enter the label for " + number + ":",
                 label,
                 new Utils.StringCallback() {
                     public void run(String label) {
                         if (label == null) return;
                         String reporterId = generateReporterId();
                         label = Utils.slice(label, 0, MAX_LABEL_LENGTH);
-                        mDb.getReporterDao().insert(
-                            new ReporterEntity(reporterId, mobileNumber, label, null));
-                        u.sendSms(mobileNumber, "fleet assign " + reporterId + " " + label);
+                        mDb.getReporterDao().put(new ReporterEntity(reporterId, label, null));
+                        mDb.getMobileNumberDao().put(MobileNumberEntity.update(
+                            mDb.getMobileNumberDao().get(number), number, label, reporterId, null
+                        ));
+                        u.sendSms(number, "fleet assign " + reporterId + " " + label);
                     }
                 },
                 new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
-                new PrintableAsciiFilter()
+                new Utils.PrintableAsciiFilter()
             );
         }
 
-        private void activateReporter(String mobileNumber, String reporterId) {
-            List<ReporterEntity> reporters = mDb.getReporterDao().getByMobileNumber(mobileNumber);
-            for (ReporterEntity reporter : reporters) {
-                if (reporter.reporterId.equals(reporterId)) {
-                    reporter.activationMillis = System.currentTimeMillis();
-                } else {
-                    reporter.activationMillis = null;
+        private void activateReporter(String number, String reporterId) {
+            ReporterEntity reporter = mDb.getReporterDao().get(reporterId);
+            if (reporter != null) {
+                MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
+                if (mobileNumber != null && mobileNumber.reporterId != null &&
+                    !mobileNumber.reporterId.equals(reporterId)) {
+                    // Deactivate the other reporter associated with this mobile number.
+                    ReporterEntity oldReporter = mDb.getReporterDao().get(mobileNumber.reporterId);
+                    oldReporter.activationMillis = null;
+                    mDb.getReporterDao().put(oldReporter);
                 }
+                reporter.activationMillis = System.currentTimeMillis();
+                mDb.getReporterDao().put(reporter);
+                mDb.getMobileNumberDao().put(MobileNumberEntity.update(
+                    mobileNumber, number, reporter.label, reporterId, null
+                ));
+                updateRegistrationTable();
+                sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_REPORTER_REGISTERED));
             }
-            mDb.getReporterDao().updateAll(reporters);
-            updateRegistrationTable();
-            sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_REPORTER_REGISTERED));
-        }
-    }
-
-    class PrintableAsciiFilter implements InputFilter {
-        @Override public CharSequence filter(
-            CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
-            for (int i = start; i < end; i++) {
-                char c = source.charAt(i);
-                if (!(c >= 32 && c <= 126)) return "";
-            }
-            return null;
         }
     }
 }
