@@ -15,7 +15,6 @@ public class SmsPointReceiver extends BroadcastReceiver {
     static final String ACTION_FLEET_RECEIVER_POINTS_ADDED = "FLEET_RECEIVER_POINTS_ADDED";
 
     @Override public void onReceive(Context context, Intent intent) {
-        Log.i(TAG, "onReceive");
         SmsMessage sms = Utils.getSmsFromIntent(intent);
         if (sms == null) return;
 
@@ -24,7 +23,7 @@ public class SmsPointReceiver extends BroadcastReceiver {
 
         String sender = sms.getDisplayOriginatingAddress();
         String body = sms.getMessageBody();
-        Log.i(TAG, "SMS from " + sender + ": " + body);
+        Log.i(TAG, "Received SMS from " + sender + ": " + body);
 
         AppDatabase db = AppDatabase.getDatabase(context);
         try {
@@ -36,7 +35,7 @@ public class SmsPointReceiver extends BroadcastReceiver {
                     PointEntity point = PointEntity.parse(reporter.reporterId, part);
                     if (point != null) points.add(point);
                 }
-                Log.i(TAG, "points received: " + points.size());
+                Log.i(TAG, "Points found in this message: " + points.size());
                 if (points.size() > 0) {
                     db.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
                     PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);

@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.telephony.SmsMessage;
 import android.text.InputFilter;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.widget.TableLayout;
 import android.widget.TableRow;
@@ -39,12 +40,13 @@ public class RegistrationActivity extends BaseActivity {
             getApplicationContext(), AppDatabase.class, "database").allowMainThreadQueries().fallbackToDestructiveMigration().build();
         updateRegistrationTable();
 
-        if (u.getSmsNumber() == null) {
+        String number = u.getMobileNumber(0);
+        if (number == null) {
             u.setText(R.id.registration_status, "Now accepting registrations.");
             u.hide(R.id.receiver_number);
         } else {
             u.setText(R.id.registration_status, "Now accepting registrations:");
-            u.setText(R.id.receiver_number, u.getSmsNumber());
+            u.setText(R.id.receiver_number, number);
         }
         registerReceiver(mSmsRegistrationReceiver, Utils.getMaxPrioritySmsFilter());
 
@@ -112,6 +114,7 @@ public class RegistrationActivity extends BaseActivity {
 
             String sender = sms.getDisplayOriginatingAddress();
             String body = sms.getMessageBody();
+            Log.i(TAG, "Received SMS from " + sender + ": " + body);
 
             if (PATTERN_REGISTER.matcher(body).matches()) {
                 abortBroadcast();
@@ -146,7 +149,7 @@ public class RegistrationActivity extends BaseActivity {
                         mDb.getMobileNumberDao().put(MobileNumberEntity.update(
                             mDb.getMobileNumberDao().get(number), number, label, reporterId, null
                         ));
-                        u.sendSms(number, "fleet assign " + reporterId + " " + label);
+                        u.sendSms(0, number, "fleet assign " + reporterId + " " + label);
                     }
                 },
                 new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
