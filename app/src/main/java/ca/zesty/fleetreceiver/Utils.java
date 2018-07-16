@@ -16,6 +16,7 @@ import android.net.Uri;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
+import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
@@ -32,6 +33,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
@@ -155,11 +157,14 @@ public class Utils {
     }
 
     public static int countMinutesFromMidnight(String hourMinute) {
-        String[] parts = hourMinute.split(":");
-        if (parts.length < 2) return 0;
-        int hours = Integer.parseInt(parts[0]);
-        int minutes = Integer.parseInt(parts[1]);
-        return hours * 60 + minutes;
+        try {
+            String[] parts = hourMinute.split(":");
+            int hours = Integer.parseInt(parts[0]);
+            int minutes = Integer.parseInt(parts[1]);
+            return hours*60 + minutes;
+        } catch (NullPointerException | IndexOutOfBoundsException | NumberFormatException e) {
+            return 0;
+        }
     }
 
     public static boolean isLocalTimeOfDayBetween(String startHourMinute, String endHourMinute) {
@@ -257,8 +262,10 @@ public class Utils {
         } catch (Settings.SettingNotFoundException e) {
             return false;
         }
-        for (String name : serviceNames.split(":")) {
-            if (name.equals(expectedServiceName)) return true;
+        if (serviceNames != null) {
+            for (String name : serviceNames.split(":")) {
+                if (name.equals(expectedServiceName)) return true;
+            }
         }
         return false;
     }
@@ -310,26 +317,10 @@ public class Utils {
         return number != null ? "+" + number.replaceAll("^\\+*", "") : null;
     }
 
-    /** Returns true if the given SIM slot exists and currently has network service. */
-    public boolean isInService(int slot) {
-        if (android.os.Build.VERSION.SDK_INT >= 22) {
-            SubscriptionInfo sub = SubscriptionManager.from(context)
-                .getActiveSubscriptionInfoForSimSlotIndex(slot);
-            if (sub == null) return false;
-            try {
-                // The TelephonyManager.getServiceStateForSubscriber(int) method is public but hidden.
-                Class cls = Class.forName("android.telephony.TelephonyManager");
-                Method method = cls.getMethod("getServiceStateForSubscriber", new Class[] {int.class});
-                Object result = method.invoke(getTelephonyManager(), new Object[] {sub.getSubscriptionId()});
-                if (result != null) {
-                    return ((ServiceState) result).getState() == ServiceState.STATE_IN_SERVICE;
-                }
-            } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                Log.e("Utils", "Failed to get service state for slot " + slot, e);
-                return false;
-            }
-        }
-        return slot == 0 && getTelephonyManager().getServiceState().getState() == ServiceState.STATE_IN_SERVICE;
+    public int getNumSimSlots() {
+        int slots = 0;
+        while (getSmsManager(slots) != null) slots++;
+        return slots;
     }
 
     /** Gets the SmsManager for a given SIM slot; returns null if no such slot. */
