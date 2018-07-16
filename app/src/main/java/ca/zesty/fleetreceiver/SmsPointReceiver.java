@@ -31,7 +31,7 @@ public class SmsPointReceiver extends BroadcastReceiver {
             ReporterEntity reporter = db.getReporterDao().get(mobileNumber != null ? mobileNumber.reporterId : null);
             if (reporter != null) {
                 List<PointEntity> points = new ArrayList<>();
-                for (String part : body.trim().split(" +")) {
+                for (String part : body.trim().split("\\s+")) {
                     PointEntity point = PointEntity.parse(reporter.reporterId, part);
                     if (point != null) points.add(point);
                 }
