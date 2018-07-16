@@ -168,9 +168,32 @@ public class MainActivity extends BaseActivity {
         return true;
     }
 
+    @Override public boolean onPrepareOptionsMenu(Menu menu) {
+        menu.findItem(R.id.action_update_reporter_now).setEnabled(
+            mSelectedReporterId != null);
+        return true;
+    }
+
     @Override public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.action_registration) {
             startActivity(new Intent(this, RegistrationActivity.class));
+        }
+        if (item.getItemId() == R.id.action_update_reporter_now) {
+            AppDatabase db = AppDatabase.getDatabase(this);
+            try {
+                ReporterEntity reporter = db.getReporterDao().get(mSelectedReporterId);
+                if (reporter != null) {
+                    boolean requested = false;
+                    for (MobileNumberEntity mobileNumber : db.getMobileNumberDao().getAllByReporterId(mSelectedReporterId)) {
+                        u.sendSms(0, mobileNumber.number, "fleet reqpoint");
+                        requested = true;
+                    }
+                    if (requested) u.showMessageBox("Update requested",
+                        "Sent an update request to " + reporter.label + ".");
+                }
+            } finally {
+                db.close();
+            }
         }
         if (item.getItemId() == R.id.action_load_map_data) {
             List<File> loadedFiles = new ArrayList<>();
@@ -396,6 +419,7 @@ public class MainActivity extends BaseActivity {
         } finally {
             db.close();
         }
+        invalidateOptionsMenu();
     }
 
     LatLong getReporterPosition(String reporterId) {

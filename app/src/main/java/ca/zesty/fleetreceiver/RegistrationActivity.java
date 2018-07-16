@@ -145,9 +145,11 @@ public class RegistrationActivity extends BaseActivity {
                         if (label == null) return;
                         String reporterId = generateReporterId();
                         label = Utils.slice(label, 0, MAX_LABEL_LENGTH);
+                        deactivateMobileNumber(number);
                         mDb.getReporterDao().put(new ReporterEntity(reporterId, label, null));
                         mDb.getMobileNumberDao().put(MobileNumberEntity.update(
-                            mDb.getMobileNumberDao().get(number), number, label, reporterId, null
+                            mDb.getMobileNumberDao().get(number),
+                            number, label, reporterId, null
                         ));
                         u.sendSms(0, number, "fleet assign " + reporterId + " " + label);
                     }
@@ -160,21 +162,25 @@ public class RegistrationActivity extends BaseActivity {
         private void activateReporter(String number, String reporterId) {
             ReporterEntity reporter = mDb.getReporterDao().get(reporterId);
             if (reporter != null) {
-                MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
-                if (mobileNumber != null && mobileNumber.reporterId != null &&
-                    !mobileNumber.reporterId.equals(reporterId)) {
-                    // Deactivate the other reporter associated with this mobile number.
-                    ReporterEntity oldReporter = mDb.getReporterDao().get(mobileNumber.reporterId);
-                    oldReporter.activationMillis = null;
-                    mDb.getReporterDao().put(oldReporter);
-                }
+                deactivateMobileNumber(number);
                 reporter.activationMillis = System.currentTimeMillis();
                 mDb.getReporterDao().put(reporter);
                 mDb.getMobileNumberDao().put(MobileNumberEntity.update(
-                    mobileNumber, number, reporter.label, reporterId, null
+                    mDb.getMobileNumberDao().get(number),
+                    number, reporter.label, reporterId, null
                 ));
                 updateRegistrationTable();
                 sendBroadcast(new Intent(ACTION_FLEET_RECEIVER_REPORTER_REGISTERED));
+            }
+        }
+
+        /** Deactivates the reporter associated with a given mobile number. */
+        private void deactivateMobileNumber(String number) {
+            MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
+            if (mobileNumber != null && mobileNumber.reporterId != null) {
+                ReporterEntity oldReporter = mDb.getReporterDao().get(mobileNumber.reporterId);
+                oldReporter.activationMillis = null;
+                mDb.getReporterDao().put(oldReporter);
             }
         }
     }

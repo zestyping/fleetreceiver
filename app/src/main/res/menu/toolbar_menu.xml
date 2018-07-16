@@ -11,6 +11,11 @@
       app:showAsAction="never"/>
 
   <item
+      android:id="@+id/action_update_reporter_now"
+      android:title="Update reporter now"
+      app:showAsAction="never"/>
+
+  <item
       android:id="@+id/action_load_map_data"
       android:title="Load map data"
       app:showAsAction="never"/>
