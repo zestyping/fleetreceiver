@@ -21,7 +21,7 @@ public class NotificationService extends BaseService {
         super.onCreate();
         Log.i(TAG, "onCreate");
         registerReceiver(mPointsAddedReceiver, new IntentFilter(
-            SmsPointReceiver.ACTION_FLEET_RECEIVER_POINTS_ADDED
+            SmsPointReceiver.ACTION_POINTS_ADDED
         ));
         registerReceiver(mReporterRegisteredReceiver, new IntentFilter(
             RegistrationActivity.ACTION_FLEET_RECEIVER_REPORTER_REGISTERED

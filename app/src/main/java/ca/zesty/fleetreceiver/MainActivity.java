@@ -20,6 +20,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.crashlytics.android.Crashlytics;
 
@@ -82,12 +83,14 @@ public class MainActivity extends BaseActivity {
 
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
+    private GpsOutageReceiver mGpsOutageReceiver = new GpsOutageReceiver();
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
     private Handler mHandler = null;
     private Runnable mRunnable = null;
     private Marker mSelectionMarker = null;
+    private Map<String, Long> mGpsOutageTimes = new HashMap<>();
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -110,7 +113,8 @@ public class MainActivity extends BaseActivity {
         initializeMap();
         startService(new Intent(getApplicationContext(), NotificationService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
-        registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsPointReceiver.ACTION_FLEET_RECEIVER_POINTS_ADDED));
+        registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsPointReceiver.ACTION_POINTS_ADDED));
+        registerReceiver(mGpsOutageReceiver, new IntentFilter(SmsPointReceiver.ACTION_GPS_OUTAGE));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -144,6 +148,7 @@ public class MainActivity extends BaseActivity {
     @Override protected void onDestroy() {
         unregisterReceiver(mLogMessageReceiver);
         unregisterReceiver(mPointsAddedReceiver);
+        unregisterReceiver(mGpsOutageReceiver);
         saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
@@ -169,7 +174,7 @@ public class MainActivity extends BaseActivity {
     }
 
     @Override public boolean onPrepareOptionsMenu(Menu menu) {
-        menu.findItem(R.id.action_update_reporter_now).setEnabled(
+        menu.findItem(R.id.action_request_location_now).setEnabled(
             mSelectedReporterId != null);
         return true;
     }
@@ -178,7 +183,7 @@ public class MainActivity extends BaseActivity {
         if (item.getItemId() == R.id.action_registration) {
             startActivity(new Intent(this, RegistrationActivity.class));
         }
-        if (item.getItemId() == R.id.action_update_reporter_now) {
+        if (item.getItemId() == R.id.action_request_location_now) {
             AppDatabase db = AppDatabase.getDatabase(this);
             try {
                 ReporterEntity reporter = db.getReporterDao().get(mSelectedReporterId);
@@ -188,8 +193,8 @@ public class MainActivity extends BaseActivity {
                         u.sendSms(0, mobileNumber.number, "fleet reqpoint");
                         requested = true;
                     }
-                    if (requested) u.showMessageBox("Update requested",
-                        "Sent an update request to " + reporter.label + ".");
+                    if (requested) u.showMessageBox("Requested location",
+                        "Sent a location request to " + reporter.label + ".");
                 }
             } finally {
                 db.close();
@@ -370,6 +375,28 @@ public class MainActivity extends BaseActivity {
         }
     }
 
+    class GpsOutageReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            String reporterId = intent.getStringExtra(SmsPointReceiver.EXTRA_REPORTER_ID);
+            long timeMillis = intent.getLongExtra(SmsPointReceiver.EXTRA_TIME_MILLIS, -1);
+            if (timeMillis >= 0) {
+                mGpsOutageTimes.put(reporterId, timeMillis);
+                updateReporterFrame();
+                AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
+                try {
+                    ReporterEntity reporter = db.getReporterDao().get(reporterId);
+                    if (reporter != null) {
+                        String message = Utils.format("%s reported no GPS signal %s",
+                            reporter.label, Utils.describeTime(timeMillis));
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show();
+                    }
+                } finally {
+                    db.close();
+                }
+            }
+        }
+    }
+
     void updateMarkers() {
         Map<String, ReporterEntity.WithPoint> reporterPoints = new HashMap<>();
         AppDatabase db = AppDatabase.getDatabase(this);
@@ -403,18 +430,30 @@ public class MainActivity extends BaseActivity {
                 ReporterEntity r = db.getReporterDao().get(mSelectedReporterId);
                 PointEntity p = db.getPointDao().getLatestPointForReporter(mSelectedReporterId);
                 u.setText(R.id.label, r.label);
-                long minSinceReport = (System.currentTimeMillis() - p.timeMillis)/MINUTE;
+
+                boolean gpsOutage = false;
+                Long gpsOutageMillis = mGpsOutageTimes.get(mSelectedReporterId);
+                long lastReportMillis = p.timeMillis;
+                if (gpsOutageMillis != null && gpsOutageMillis > p.timeMillis) {
+                    gpsOutage = true;
+                    lastReportMillis = gpsOutageMillis;
+                }
+                long minSinceReport = (System.currentTimeMillis() - lastReportMillis)/MINUTE;
                 long expectedIntervalMin = u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10);
                 u.setText(R.id.label_details,
-                    Utils.format("last report " + Utils.describeTime(p
-                        .timeMillis)),
+                    Utils.format("last report " + Utils.describeTime(p.timeMillis)),
                     minSinceReport > expectedIntervalMin ? 0xffe04020 : 0x8a000000);
-                long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
-                u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh));
-                u.setText(R.id.speed_details,
-                    (p.isResting() ? "stopped" : "started") + " moving " +
-                        Utils.describeTime(lastTransitionMillis)
-                );
+                if (gpsOutage) {
+                    u.setText(R.id.speed, "no GPS", 0xffe04020);
+                    u.setText(R.id.speed_details, "");
+                } else {
+                    long lastTransitionMillis = p.isTransition() ? p.timeMillis : p.lastTransitionMillis;
+                    u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh), 0x8a000000);
+                    u.setText(R.id.speed_details,
+                        (p.isResting() ? "stopped" : "started") + " moving " +
+                            Utils.describeTime(lastTransitionMillis)
+                    );
+                }
             }
         } finally {
             db.close();

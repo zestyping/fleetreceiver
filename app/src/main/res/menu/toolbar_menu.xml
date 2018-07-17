@@ -11,8 +11,8 @@
       app:showAsAction="never"/>
 
   <item
-      android:id="@+id/action_update_reporter_now"
-      android:title="Update reporter now"
+      android:id="@+id/action_request_location_now"
+      android:title="Request location now"
       app:showAsAction="never"/>
 
   <item
