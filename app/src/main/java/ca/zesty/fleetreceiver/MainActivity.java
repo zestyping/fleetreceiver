@@ -55,6 +55,7 @@ import org.mapsforge.map.rendertheme.InternalRenderTheme;
 import org.mapsforge.map.util.MapViewProjection;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -106,8 +107,11 @@ public class MainActivity extends BaseActivity {
             Manifest.permission.RECEIVE_BOOT_COMPLETED,
             Manifest.permission.RECEIVE_SMS,
             Manifest.permission.SEND_SMS,
-            Manifest.permission.WAKE_LOCK
+            Manifest.permission.WAKE_LOCK,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
         }, 0);
+
+        restoreDatabaseFromDownload();
 
         AndroidGraphicFactory.createInstance(getApplication());
         mMapView = (MapView) findViewById(R.id.map);
@@ -226,6 +230,64 @@ public class MainActivity extends BaseActivity {
             u.relaunchApp();
         }
         return false;
+    }
+
+    void restoreDatabaseFromDownload() {
+        File directory;
+        try {
+            directory = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        } catch (RuntimeException e) {
+            return;
+        }
+        File source = new File(directory, "fleetreceiver.db");
+        File target = getDatabasePath("database.tmp");
+        if (source.canRead()) {
+            Log.i(TAG, "Copying " + source + " to " + target);
+            try {
+                InputStream in = new FileInputStream(source);
+                try {
+                    OutputStream out = new FileOutputStream(target);
+                    try {
+                        byte[] buffer = new byte[1024];
+                        int len;
+                        while ((len = in.read(buffer)) > 0) {
+                            out.write(buffer, 0, len);
+                        }
+                    } finally {
+                        out.close();
+                    }
+                } finally {
+                    in.close();
+                }
+            } catch (IOException e) {
+                return;
+            }
+            File existing = getDatabasePath("database");
+            if (existing.exists()) {
+                moveFile(existing, getDatabasePath(Utils.format(
+                    "database.%s.bak", Utils.formatUtcTimeSeconds(Utils.getTime()))
+                ));
+            }
+            moveFile(target, getDatabasePath("database"));
+            deleteFile(source);
+        }
+    }
+
+    void moveFile(File source, File target) {
+        if (source.renameTo(target)) {
+            Log.i(TAG, "Moved " + source + " to " + target);
+        } else {
+            Log.i(TAG, "Failed to move " + source + " to " + target);
+        }
+    }
+
+    void deleteFile(File file) {
+        if (file.delete()) {
+            Log.i(TAG, "Deleted " + file);
+        } else {
+            Log.i(TAG, "Failed to delete " + file);
+        }
     }
 
     MapDataStore reloadMapData(List<File> loadedFiles) {
