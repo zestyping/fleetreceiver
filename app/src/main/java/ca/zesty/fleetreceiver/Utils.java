@@ -13,11 +13,11 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.location.LocationManager;
 import android.net.Uri;
+import android.os.Environment;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
-import android.telephony.PhoneStateListener;
-import android.telephony.ServiceState;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.telephony.SubscriptionInfo;
@@ -33,7 +33,11 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-import java.lang.reflect.Field;
+import com.crashlytics.android.Crashlytics;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
@@ -46,10 +50,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Utils {
+    static final String TAG = "Utils";
     static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     static final SimpleDateFormat RFC3339_UTC_SECONDS;
     static final SimpleDateFormat RFC3339_UTC_MILLIS;
-
     static {
         RFC3339_UTC_SECONDS = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
         RFC3339_UTC_SECONDS.setTimeZone(UTC);
@@ -60,9 +64,24 @@ public class Utils {
     static final Pattern PATTERN_TIMESTAMP = Pattern.compile(
         "(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z");
 
+    static int sNumLogRemoteLines = 0;
+    static long sTimeOffsetMillis = 0;  // compensate for an inaccurate system clock
+
+    public static void setTimeOffset(long offsetMillis) {
+        sTimeOffsetMillis = offsetMillis;
+    }
+
+    public static long getTime() {
+        return System.currentTimeMillis() + sTimeOffsetMillis;
+    }
+
     /** Calls String.format with the US locale. */
     public static String format(String template, Object... args) {
         return String.format(Locale.US, template, args);
+    }
+
+    public static String escapeString(String str) {
+        return str.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n");
     }
 
     public static String plural(long count, String singular, String plural) {
@@ -144,7 +163,7 @@ public class Utils {
 
     /** Describes a time in the past using a short phrase like "15 h ago". */
     public static String describeTime(long timeMillis) {
-        long elapsedMillis = System.currentTimeMillis() - timeMillis;
+        long elapsedMillis = Utils.getTime() - timeMillis;
         if (elapsedMillis < 60000) return "just now";
         else return describePeriod(elapsedMillis) + " ago";
     }
@@ -156,7 +175,7 @@ public class Utils {
         return format("%.0f km", 0.001 * meters);
     }
 
-    public static int countMinutesFromMidnight(String hourMinute) {
+    public static int countMinutesSinceMidnight(String hourMinute) {
         try {
             String[] parts = hourMinute.split(":");
             int hours = Integer.parseInt(parts[0]);
@@ -167,15 +186,19 @@ public class Utils {
         }
     }
 
+    public static int getLocalMinutesSinceMidnight() {
+        Calendar localTime = Calendar.getInstance();
+        return localTime.get(Calendar.HOUR_OF_DAY) * 60 + localTime.get(Calendar.MINUTE);
+    }
+
     public static boolean isLocalTimeOfDayBetween(String startHourMinute, String endHourMinute) {
-        int startMinutes = countMinutesFromMidnight(startHourMinute);
-        int endMinutes = countMinutesFromMidnight(endHourMinute);
-        Calendar currentTime = Calendar.getInstance();
-        int currentMinutes = currentTime.get(Calendar.HOUR_OF_DAY) * 60 + currentTime.get(Calendar.MINUTE);
+        int startMinutes = countMinutesSinceMidnight(startHourMinute);
+        int endMinutes = countMinutesSinceMidnight(endHourMinute);
+        int localMinutes = getLocalMinutesSinceMidnight();
         if (startMinutes <= endMinutes) {
-            return startMinutes <= currentMinutes && currentMinutes < endMinutes;
+            return startMinutes <= localMinutes && localMinutes < endMinutes;
         } else {
-            return startMinutes <= currentMinutes || currentMinutes < endMinutes;
+            return startMinutes <= localMinutes || localMinutes < endMinutes;
         }
     }
 
@@ -212,6 +235,57 @@ public class Utils {
                 if (!(c == '+' || c >= '0' && c <= '9')) return "";
             }
             return null;
+        }
+    }
+
+    public static void log(String tag, String message, Object... args) {
+        logHelper(tag, args.length > 0 ? Utils.format(message, args) : message, false);
+    }
+
+    public static void logRemote(String tag, String message, Object... args) {
+        logHelper(tag, args.length > 0 ? Utils.format(message, args) : message, true);
+    }
+
+    private static void logHelper(String tag, String message, boolean remote) {
+        String timestamp = Utils.formatUtcTimeSeconds(Utils.getTime());
+        String logLine = Utils.format("%s - %s: %s", timestamp, tag, message);
+        if (remote) {
+            Log.i(tag, "(logged to remote) " + message);
+            Crashlytics.log(logLine);
+            if (++sNumLogRemoteLines >= 100) {
+                Utils.transmitLog();
+            }
+        } else {
+            Log.i(tag, message);
+        }
+        String filename = Utils.format("fleetreporter-%s.txt", timestamp.substring(0, 10));
+        File directory;
+        try {
+            directory = Environment.getExternalStorageDirectory();
+        } catch (RuntimeException e) {
+            // Fails during testing because getExternalStorageDirectory() is not mocked.
+            return;
+        }
+        File file = new File(directory, filename);
+        try {
+            FileWriter writer = new FileWriter(file, true);
+            try {
+                writer.append(Utils.escapeString(logLine) + "\n");
+            } finally {
+                writer.close();
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Could not write to " + file.getAbsolutePath());
+        }
+    }
+
+    public static void transmitLog() {
+        try {
+            throw new RuntimeException("Diagnostic log");
+        } catch (RuntimeException e) {
+            Crashlytics.logException(e);
+            Log.i(TAG, "Captured Crashlytics diagnostic log (events: " + sNumLogRemoteLines + ")");
+            sNumLogRemoteLines = 0;
         }
     }
 
@@ -270,6 +344,18 @@ public class Utils {
         return false;
     }
 
+    public void relaunchApp() {
+        Utils.logRemote(TAG, "Relaunch");
+        Utils.transmitLog();
+        Intent intent = new Intent(context, MainActivity.class);
+        getAlarmManager().set(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + 300,
+            PendingIntent.getActivity(context, 1, intent, PendingIntent.FLAG_CANCEL_CURRENT)
+        );
+        System.exit(0);
+    }
+
     /** Sends a text message using the default SmsManager. */
     public void sendSms(int slot, String recipient, String body) {
         sendSms(slot, recipient, body, null);
@@ -279,7 +365,7 @@ public class Utils {
     public void sendSms(int slot, String recipient, String body, Intent sentBroadcastIntent) {
         PendingIntent sentIntent = sentBroadcastIntent == null ? null :
             PendingIntent.getBroadcast(context, 0, sentBroadcastIntent, PendingIntent.FLAG_ONE_SHOT);
-        Log.i("Utils", "Sending SMS on slot " + slot + " to " + recipient + ": " + body);
+        Utils.logRemote(TAG, "Sending SMS (slot %d) to %s: %s", slot, recipient, body);
         getSmsManager(slot).sendTextMessage(recipient, null, body, sentIntent, null);
     }
 
@@ -296,7 +382,7 @@ public class Utils {
                 Object result = method.invoke(getTelephonyManager(), new Object[] {sub.getSubscriptionId()});
                 return (String) result;
             } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                Log.e("Utils", "Failed to look up subscriber ID for slot " + slot, e);
+                Log.e(TAG, "Failed to look up subscriber ID for slot " + slot + ": " + e);
                 return null;
             }
         }
@@ -350,15 +436,26 @@ public class Utils {
         return getPrefs().getString(key, defaultValue);
     }
 
+    public boolean getBooleanPref(String key) {
+        return getBooleanPref(key, false);
+    }
+
     public boolean getBooleanPref(String key, boolean defaultValue) {
-        return getPrefs().getBoolean(key, defaultValue);
+        try {
+            return getPrefs().getBoolean(key, defaultValue);
+        } catch (ClassCastException e) {
+            return defaultValue;
+        }
     }
 
     public int getIntPref(String key, int defaultValue) {
         int value = defaultValue;
         try {
+            return getPrefs().getInt(key, defaultValue);
+        } catch (ClassCastException e) { }
+        try {
             value = Integer.parseInt(getPrefs().getString(key, "x"));
-        } catch (NumberFormatException e) { }
+        } catch (ClassCastException | NumberFormatException e) { }
         return value;
     }
 
@@ -374,8 +471,12 @@ public class Utils {
         getPrefs().edit().putString(key, value).commit();
     }
 
+    public void setPref(String key, boolean value) {
+        getPrefs().edit().putBoolean(key, value).commit();
+    }
+
     public void sendUssd(int slot, String code) {
-        Log.i("Utils", "Slot " + slot + ": sending USSD code " + code);
+        Utils.logRemote(TAG, "Sending USSD (slot %d): %s", slot, code);
         Intent intent = new Intent(Intent.ACTION_CALL);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);  // required to start an Activity from a non-Activity context
         intent.setData(Uri.parse("tel:" + Uri.encode(code)));

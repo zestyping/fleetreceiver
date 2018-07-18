@@ -10,6 +10,7 @@ import android.graphics.DashPathEffect;
 import android.graphics.Paint.Cap;
 import android.graphics.Paint.Join;
 import android.graphics.RectF;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -132,6 +133,12 @@ public class MainActivity extends BaseActivity {
                 mHandler.postDelayed(mRunnable, DISPLAY_INTERVAL_MILLIS);
             }
         };
+
+        if (u.getBooleanPref(Prefs.PLAY_STORE_REQUESTED)) {
+            u.setPref(Prefs.PLAY_STORE_REQUESTED, false);
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
+                "market://details?id=ca.zesty.fleetreceiver")));
+        }
     }
 
     @Override protected void onResume() {
@@ -213,6 +220,10 @@ public class MainActivity extends BaseActivity {
         }
         if (item.getItemId() == R.id.action_settings) {
             startActivity(new Intent(this, SettingsActivity.class));
+        }
+        if (item.getItemId() == R.id.action_update) {
+            u.setPref(Prefs.PLAY_STORE_REQUESTED, true);
+            u.relaunchApp();
         }
         return false;
     }
