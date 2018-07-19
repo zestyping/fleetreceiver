@@ -7,7 +7,12 @@
 
   <item
       android:id="@+id/action_registration"
-      android:title="Register reporters"
+      android:title="Accept registrations..."
+      app:showAsAction="never"/>
+
+  <item
+      android:id="@+id/action_request_sharing"
+      android:title="Request sharing..."
       app:showAsAction="never"/>
 
   <item

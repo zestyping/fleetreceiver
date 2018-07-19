@@ -16,6 +16,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.util.Pair;
+import android.text.InputFilter;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -74,6 +75,7 @@ public class MainActivity extends BaseActivity {
     static final String TAG = "MainActivity";
     static final String ACTION_FLEET_RECEIVER_LOG_MESSAGE = "FLEET_RECEIVER_LOG_MESSAGE";
     static final String EXTRA_LOG_MESSAGE = "LOG_MESSAGE";
+    static final int MAX_LABEL_LENGTH = 20;
     static final long DISPLAY_INTERVAL_MILLIS = 5*1000;
     static final int MAX_ZOOM_IN_LEVEL = 14;
     static final double TAU = 2 * Math.PI;
@@ -86,6 +88,7 @@ public class MainActivity extends BaseActivity {
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
     private GpsOutageReceiver mGpsOutageReceiver = new GpsOutageReceiver();
+    private SourceActivatedReceiver mSourceActivatedReceiver = new SourceActivatedReceiver();
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
@@ -93,12 +96,13 @@ public class MainActivity extends BaseActivity {
     private Runnable mRunnable = null;
     private Marker mSelectionMarker = null;
     private Map<String, Long> mGpsOutageTimes = new HashMap<>();
+    private String mLastSharingRequestNumber = "+";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Fabric.with(this, new Crashlytics());
         setContentView(R.layout.activity_main);
-        setTitle("Fleet Receiver " + BuildConfig.VERSION_NAME);
+        updateTitle();
 
         ActivityCompat.requestPermissions(this, new String[] {
             Manifest.permission.INTERNET,
@@ -112,14 +116,17 @@ public class MainActivity extends BaseActivity {
         }, 0);
 
         restoreDatabaseFromDownload();
+        populateReceiverId();
+        populateReceiverLabel();
 
         AndroidGraphicFactory.createInstance(getApplication());
         mMapView = (MapView) findViewById(R.id.map);
         initializeMap();
         startService(new Intent(getApplicationContext(), NotificationService.class));
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
-        registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsPointReceiver.ACTION_POINTS_ADDED));
-        registerReceiver(mGpsOutageReceiver, new IntentFilter(SmsPointReceiver.ACTION_GPS_OUTAGE));
+        registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsReceiver.ACTION_POINTS_ADDED));
+        registerReceiver(mGpsOutageReceiver, new IntentFilter(SmsReceiver.ACTION_GPS_OUTAGE));
+        registerReceiver(mSourceActivatedReceiver, new IntentFilter(SmsReceiver.ACTION_SOURCE_ACTIVATED));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -160,6 +167,7 @@ public class MainActivity extends BaseActivity {
         unregisterReceiver(mLogMessageReceiver);
         unregisterReceiver(mPointsAddedReceiver);
         unregisterReceiver(mGpsOutageReceiver);
+        unregisterReceiver(mSourceActivatedReceiver);
         saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
@@ -210,6 +218,9 @@ public class MainActivity extends BaseActivity {
             } finally {
                 db.close();
             }
+        }
+        if (item.getItemId() == R.id.action_request_sharing) {
+            requestSharing();
         }
         if (item.getItemId() == R.id.action_load_map_data) {
             List<File> loadedFiles = new ArrayList<>();
@@ -288,6 +299,67 @@ public class MainActivity extends BaseActivity {
         } else {
             Log.i(TAG, "Failed to delete " + file);
         }
+    }
+
+    void populateReceiverId() {
+        if (u.getPref(Prefs.RECEIVER_ID).isEmpty()) {
+            u.setPref(Prefs.RECEIVER_ID, Utils.generateExchangeId());
+        }
+    }
+
+    void populateReceiverLabel() {
+        if (u.getPref(Prefs.RECEIVER_LABEL).isEmpty()) {
+            u.promptForString(
+                "Receiver Name",
+                "Enter a name for this receiver:",
+                "",
+                new Utils.StringCallback() {
+                    public void run(String label) {
+                        if (label == null) return;
+                        label = Utils.slice(label, 0, MAX_LABEL_LENGTH);
+                        u.setPref(Prefs.RECEIVER_LABEL, label);
+                        updateTitle();
+                    }
+                },
+                new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
+                new PrintableAsciiFilter()
+            );
+        }
+    }
+
+    void updateTitle() {
+        String title = "Fleet Receiver " + BuildConfig.VERSION_NAME;
+        String label = u.getPref(Prefs.RECEIVER_LABEL).trim();
+        if (!label.isEmpty()) title += " \u2014 " + label;
+        setTitle(title);
+    }
+
+    void requestSharing() {
+        u.promptForString(
+            "Request to see points from another Receiver",
+            "Enter the other Receiver's mobile number:",
+            mLastSharingRequestNumber,
+            new Utils.StringCallback() {
+                public void run(String mobileNumber) {
+                    if (mobileNumber == null) return;
+                    mLastSharingRequestNumber = mobileNumber;
+                    AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
+                    try {
+                        SourceEntity source = new SourceEntity(
+                            SourceEntity.PENDING_ID, mobileNumber, "", null);
+                        if (db.getSourceDao().update(source) == 0) {
+                            db.getSourceDao().insert(source);
+                        }
+                    } finally {
+                        db.close();
+                    }
+                    u.sendSms(0, mobileNumber, Utils.format(
+                        "fleet watch %s %s",
+                        u.getPref(Prefs.RECEIVER_ID),
+                        u.getPref(Prefs.RECEIVER_LABEL)));
+                }
+            }
+        );
     }
 
     MapDataStore reloadMapData(List<File> loadedFiles) {
@@ -426,49 +498,11 @@ public class MainActivity extends BaseActivity {
         return false;
     }
 
-    class LogMessageReceiver extends BroadcastReceiver {
-        @Override public void onReceive(Context context, Intent intent) {
-            if (intent.hasExtra(EXTRA_LOG_MESSAGE)) {
-                String message = intent.getStringExtra(EXTRA_LOG_MESSAGE);
-                ((TextView) findViewById(R.id.message_log)).append(message + "\n");
-            }
-        }
-    }
-
     public static void postLogMessage(Context context, String message) {
         Intent intent = new Intent(ACTION_FLEET_RECEIVER_LOG_MESSAGE);
         intent.putExtra(EXTRA_LOG_MESSAGE,
             Utils.formatUtcTimeSeconds(System.currentTimeMillis()) + " - " + message);
         context.sendBroadcast(intent);
-    }
-
-    class PointsAddedReceiver extends BroadcastReceiver {
-        @Override public void onReceive(Context context, Intent intent) {
-            updateMarkers();
-            updateReporterFrame();
-        }
-    }
-
-    class GpsOutageReceiver extends BroadcastReceiver {
-        @Override public void onReceive(Context context, Intent intent) {
-            String reporterId = intent.getStringExtra(SmsPointReceiver.EXTRA_REPORTER_ID);
-            long timeMillis = intent.getLongExtra(SmsPointReceiver.EXTRA_TIME_MILLIS, -1);
-            if (timeMillis >= 0) {
-                mGpsOutageTimes.put(reporterId, timeMillis);
-                updateReporterFrame();
-                AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
-                try {
-                    ReporterEntity reporter = db.getReporterDao().get(reporterId);
-                    if (reporter != null) {
-                        String message = Utils.format("%s reported no GPS signal %s",
-                            reporter.label, Utils.describeTime(timeMillis));
-                        Toast.makeText(context, message, Toast.LENGTH_LONG).show();
-                    }
-                } finally {
-                    db.close();
-                }
-            }
-        }
     }
 
     void updateMarkers() {
@@ -1040,6 +1074,66 @@ public class MainActivity extends BaseActivity {
                 new RectF(cx - DOT_RADIUS, cy - DOT_RADIUS, cx + DOT_RADIUS, cy + DOT_RADIUS),
                 270, Math.min(360, minSinceReport * 6), false, getAndroidPaint(arcPaint)
             );
+        }
+    }
+
+    class LogMessageReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent.hasExtra(EXTRA_LOG_MESSAGE)) {
+                String message = intent.getStringExtra(EXTRA_LOG_MESSAGE);
+                ((TextView) findViewById(R.id.message_log)).append(message + "\n");
+            }
+        }
+    }
+
+    class PointsAddedReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            updateMarkers();
+            updateReporterFrame();
+        }
+    }
+
+    class GpsOutageReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            String reporterId = intent.getStringExtra(SmsReceiver.EXTRA_REPORTER_ID);
+            long timeMillis = intent.getLongExtra(SmsReceiver.EXTRA_TIME_MILLIS, -1);
+            if (timeMillis >= 0) {
+                mGpsOutageTimes.put(reporterId, timeMillis);
+                updateReporterFrame();
+                AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
+                try {
+                    ReporterEntity reporter = db.getReporterDao().get(reporterId);
+                    if (reporter != null) {
+                        String message = Utils.format("%s reported no GPS signal %s",
+                            reporter.label, Utils.describeTime(timeMillis));
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show();
+                    }
+                } finally {
+                    db.close();
+                }
+            }
+        }
+    }
+
+    class SourceActivatedReceiver extends BroadcastReceiver {
+        @Override public void onReceive(Context context, Intent intent) {
+            String sourceId = intent.getStringExtra(SmsReceiver.EXTRA_SOURCE_ID);
+            AppDatabase db = AppDatabase.getDatabase(context);
+            String message;
+            try {
+                SourceEntity source = db.getSourceDao().get(sourceId);
+                if (source != null) {
+                    u.showMessageBox(
+                        "Sharing request accepted",
+                        Utils.format(
+                            "%s (%s) has agreed to share their map points with you.",
+                            source.label, source.mobileNumber
+                        )
+                    );
+                }
+            } finally {
+                db.close();
+            }
         }
     }
 }

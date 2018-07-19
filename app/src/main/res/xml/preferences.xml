@@ -4,6 +4,11 @@
     android:title="Settings">
 
   <EditTextPreference
+      android:key="pref_receiver_label"
+      android:title="Receiver label"
+      android:defaultValue="" />
+
+  <EditTextPreference
       android:key="pref_expected_reporting_interval"
       android:title="Expected reporting interval"
       android:summary="Expected maximum minutes between points"
@@ -26,6 +31,13 @@
         android:key="pref_show_log"
         android:title="Show message log"
         android:defaultValue="false" />
+
+    <EditTextPreference
+        android:key="pref_receiver_id"
+        android:title="Receiver ID"
+        android:summary="Do not edit (debugging only)"
+        android:defaultValue="" />
+
   </PreferenceScreen>
 
 </PreferenceScreen>

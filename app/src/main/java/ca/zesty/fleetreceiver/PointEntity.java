@@ -13,6 +13,7 @@ public class PointEntity {
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "point_id") public long pointId;
     @ColumnInfo(name = "parent_reporter_id") public String reporterId;
+    @ColumnInfo(name = "parent_source_id") public String sourceId;
     @ColumnInfo(name = "time_millis") public long timeMillis;
     @ColumnInfo(name = "latitude") public double latitude;
     @ColumnInfo(name = "longitude") double longitude;
@@ -41,22 +42,25 @@ public class PointEntity {
 
     /** Formats a point for readability and debugging. */
     public String toString() {
-        String fix =  String.format(
+        String fix = String.format(
             Locale.US, "%s: (%+.5f, %+.5f, %+.0f m), %.0f km/h brg %.0f, sd=%.0f m",
             Utils.formatUtcTimeSeconds(timeMillis),
             latitude, longitude, altitude, speedKmh, bearing, latLonSd
         );
 
-        return String.format(Locale.US, "<%s, %s %d s%s>", fix,
+        String reporter = reporterId;
+        if (sourceId != null) reporter += " (via " + sourceId + ")";
+        return String.format(Locale.US, "<%s: %s, %s %d s%s>", reporter, fix,
             (type == 'r' || type == 'g') ? "rested" : "moved",
             (timeMillis - lastTransitionMillis) / 1000,
             type == 'g' ? ", go" : type == 's' ? ", stop" : ""
         );
     }
 
-    public static PointEntity parse(String reporterId, String text) {
+    public static PointEntity parse(String reporterId, String sourceId, String text) {
         PointEntity point = new PointEntity();
         point.reporterId = reporterId;
+        point.sourceId = sourceId;
 
         String[] parts = text.split(";");
         if (parts.length != 8) return null;

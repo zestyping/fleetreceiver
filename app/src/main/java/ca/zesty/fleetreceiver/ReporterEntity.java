@@ -21,13 +21,15 @@ import android.support.annotation.NonNull;
 public class ReporterEntity {
     @PrimaryKey @NonNull
     @ColumnInfo(name = "reporter_id") public String reporterId;
+    @ColumnInfo(name = "source_id") public String sourceId;
     @ColumnInfo(name = "label") public String label;
     @ColumnInfo(name = "activation_millis") public Long activationMillis;
     @ColumnInfo(name = "latest_point_id") public Long latestPointId;
 
     public ReporterEntity(
-        String reporterId, String label, Long activationMillis) {
+        String reporterId, String sourceId, String label, Long activationMillis) {
         this.reporterId = reporterId;
+        this.sourceId = sourceId;
         this.label = label;
         this.activationMillis = activationMillis;
         this.latestPointId = null;

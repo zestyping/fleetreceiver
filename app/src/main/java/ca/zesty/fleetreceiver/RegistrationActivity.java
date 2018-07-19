@@ -1,6 +1,5 @@
 package ca.zesty.fleetreceiver;
 
-import android.arch.persistence.room.Room;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -14,11 +13,10 @@ import android.widget.TableLayout;
 import android.widget.TableRow;
 
 import java.util.List;
-import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Allows Fleet Reporter instances to register over SMS. */
+/** Allows Fleet Reporters to register and Fleet Receivers to request forwarding over SMS. */
 public class RegistrationActivity extends BaseActivity {
     static final String TAG = "RegistrationActivity";
     static final int MAX_LABEL_LENGTH = 20;
@@ -36,8 +34,7 @@ public class RegistrationActivity extends BaseActivity {
         setTitle("Registration");
         getSupportActionBar().setHomeButtonEnabled(true);
 
-        mDb = Room.databaseBuilder(
-            getApplicationContext(), AppDatabase.class, "database").allowMainThreadQueries().fallbackToDestructiveMigration().build();
+        mDb = AppDatabase.getDatabase(this);
         updateRegistrationTable();
 
         String number = u.getMobileNumber(0);
@@ -63,6 +60,7 @@ public class RegistrationActivity extends BaseActivity {
     @Override protected void onDestroy() {
         mHandler.removeCallbacks(mRunnable);
         unregisterReceiver(mSmsRegistrationReceiver);
+        mDb.close();
         super.onDestroy();
     }
 
@@ -92,21 +90,11 @@ public class RegistrationActivity extends BaseActivity {
         }
     }
 
-    private String generateReporterId() {
-        Random random = new Random(System.currentTimeMillis());
-        String alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        String id = "";
-        for (int i = 0; i < 12; i++) {
-            int index = random.nextInt(alphabet.length());
-            id = id + alphabet.substring(index, index + 1);
-        }
-        return id;
-    }
-
     /** Handles incoming SMS messages for device registration. */
     class SmsRegistrationReceiver extends BroadcastReceiver {
         final Pattern PATTERN_REGISTER = Pattern.compile("^fleet register");
-        final Pattern PATTERN_ACTIVATE = Pattern.compile("^fleet activate ([0-9a-zA-Z]+)");
+        final Pattern PATTERN_ACTIVATE = Pattern.compile("^fleet activate (\\w+)");
+        final Pattern PATTERN_WATCH = Pattern.compile("^fleet watch (\\w+) *(.*)");
 
         @Override public void onReceive(Context context, Intent intent) {
             SmsMessage sms = Utils.getSmsFromIntent(intent);
@@ -126,6 +114,13 @@ public class RegistrationActivity extends BaseActivity {
             if (matcher.matches()) {
                 abortBroadcast();
                 activateReporter(sender, matcher.group(1));
+                return;
+            }
+
+            matcher = PATTERN_WATCH.matcher(body);
+            if (matcher.matches()) {
+                abortBroadcast();
+                handleTargetRequest(sender, matcher.group(1));
             }
         }
 
@@ -143,10 +138,10 @@ public class RegistrationActivity extends BaseActivity {
                 new Utils.StringCallback() {
                     public void run(String label) {
                         if (label == null) return;
-                        String reporterId = generateReporterId();
+                        String reporterId = Utils.generateReporterId();
                         label = Utils.slice(label, 0, MAX_LABEL_LENGTH);
                         deactivateMobileNumber(number);
-                        mDb.getReporterDao().put(new ReporterEntity(reporterId, label, null));
+                        mDb.getReporterDao().put(new ReporterEntity(reporterId, null, label, null));
                         mDb.getMobileNumberDao().put(MobileNumberEntity.update(
                             mDb.getMobileNumberDao().get(number),
                             number, label, reporterId, null
@@ -183,5 +178,66 @@ public class RegistrationActivity extends BaseActivity {
                 mDb.getReporterDao().put(oldReporter);
             }
         }
+
+        private void handleTargetRequest(final String mobileNumber, final String targetId) {
+            u.promptForString(
+                "Sharing request from " + mobileNumber,
+                mobileNumber + " is requesting to see the points on your map. " +
+                    "If you agree, enter a name for this recipient and tap OK.",
+                getDefaultTargetLabel(targetId, mobileNumber),
+                new Utils.StringCallback() {
+                    public void run(String label) {
+                        if (label == null) return;
+                        label = Utils.slice(label, 0, MAX_LABEL_LENGTH);
+                        activateTarget(targetId, mobileNumber, label);
+                    }
+                },
+                new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
+                new PrintableAsciiFilter()
+            );
+        }
+
+        private String getDefaultTargetLabel(String targetId, String mobileNumber) {
+            TargetEntity target = mDb.getTargetDao().get(targetId);
+            if (target != null) return target.label;
+            for (TargetEntity w : mDb.getTargetDao().getActiveByMobileNumber(mobileNumber)) {
+                return w.label;
+            }
+            for (TargetEntity w : mDb.getTargetDao().getByMobileNumber(mobileNumber)) {
+                return w.label;
+            }
+            return "";
+        }
+
+        private void activateTarget(String targetId, String mobileNumber, String label) {
+            List<TargetEntity> targets = mDb.getTargetDao().getByMobileNumber(mobileNumber);
+            long now = System.currentTimeMillis();
+            TargetEntity targetToActivate = null;
+            for (TargetEntity target : targets) {
+                target.activationMillis = null;
+                if (target.targetId.equals(targetId)) {
+                    targetToActivate = target;
+                }
+            }
+            if (targetToActivate == null) {
+                targetToActivate = mDb.getTargetDao().get(targetId);
+                if (targetToActivate != null) targets.add(targetToActivate);
+            }
+            if (targetToActivate != null) {
+                targetToActivate.mobileNumber = mobileNumber;
+                targetToActivate.label = label;
+                targetToActivate.activationMillis = now;
+            } else {
+                targetToActivate = new TargetEntity(targetId, mobileNumber, label, now);
+                mDb.getTargetDao().insert(targetToActivate);
+            }
+            mDb.getTargetDao().updateAll(targets);
+            u.sendSms(0, mobileNumber, Utils.format(
+                "fleet forward %s %s",
+                u.getPref(Prefs.RECEIVER_ID),
+                u.getPref(Prefs.RECEIVER_LABEL)
+            ));
+        }
     }
+
 }

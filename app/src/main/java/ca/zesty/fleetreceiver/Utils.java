@@ -45,6 +45,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -115,6 +116,25 @@ public class Utils {
             array[i] = list.get(i);
         }
         return array;
+    }
+
+    public static String generateRandomString(int length) {
+        Random random = new Random(System.currentTimeMillis());
+        String alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String result = "";
+        for (int i = 0; i < length; i++) {
+            int index = random.nextInt(alphabet.length());
+            result = result + alphabet.substring(index, index + 1);
+        }
+        return result;
+    }
+
+    public static String generateExchangeId() {
+        return "X" + generateRandomString(11);
+    }
+
+    public static String generateReporterId() {
+        return "R" + generateRandomString(11);
     }
 
     /** Formats a time as an RFC3339 timestamp in UTC of exactly 20 characters. */
@@ -264,7 +284,13 @@ public class Utils {
         } else {
             Log.i(tag, message);
         }
-        String filename = Utils.format("fleetreporter-%s.txt", timestamp.substring(0, 10));
+        String packageName;
+        try {
+            packageName = Crashlytics.getInstance().getContext().getPackageName();
+        } catch (Exception e) {
+            packageName = "ca.zesty";
+        }
+        String filename = Utils.format("%s-%s.txt", packageName, timestamp.substring(0, 10));
         File directory;
         try {
             directory = Environment.getExternalStorageDirectory();
