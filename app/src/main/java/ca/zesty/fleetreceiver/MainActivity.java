@@ -551,17 +551,26 @@ public class MainActivity extends BaseActivity {
         change = newZoom - zoom;
 
         LatLong pivot = getReporterPosition(mSelectedReporterId);
-        if (pivot == null) {
-            pos.setZoomLevel(newZoom, true);
-            return;
+        if (pivot != null) {
+            MapViewProjection proj = mMapView.getMapViewProjection();
+            Point centerPt = proj.toPixels(pos.getCenter());
+            Point pivotPt = proj.toPixels(pivot);
+            int w = mMapView.getWidth();
+            int h = mMapView.getHeight();
+            // When zooming in, try to keep the pivot point onscreen if it's visible.
+            // When zooming out, don't use the pivot if it's close to the edge.
+            int xMargin = change < 0 ? w / 5 : 0;
+            int yMargin = change < 0 ? h / 5 : 0;
+            if (pivotPt.x >= xMargin && pivotPt.x < w - xMargin &&
+                pivotPt.y >= yMargin && pivotPt.y < h - yMargin) {
+                double dx = centerPt.x - pivotPt.x;
+                double dy = centerPt.y - pivotPt.y;
+                double factor = 1 - Math.pow(0.5, change);
+                pos.moveCenterAndZoom(dx*factor, dy*factor, (byte) change, false);
+            }
         }
-        MapViewProjection proj = mMapView.getMapViewProjection();
-        Point centerPt = proj.toPixels(pos.getCenter());
-        Point pivotPt = proj.toPixels(pivot);
-        double dx = centerPt.x - pivotPt.x;
-        double dy = centerPt.y - pivotPt.y;
-        double factor = 1 - Math.pow(0.5, change);
-        pos.moveCenterAndZoom(dx * factor, dy * factor, (byte) change, false);
+        // If no valid pivot, do a normal zoom about the center of the map view.
+        pos.setZoomLevel(newZoom, true);
     }
 
     int dpToPixels(double dp) {
@@ -762,7 +771,7 @@ public class MainActivity extends BaseActivity {
         final int FRAME_RADIUS = dpToPixels(12);
         final int ARROW_TIP_SIZE = dpToPixels(9);
         final int TEXT_HEIGHT = dpToPixels(12) * 3/4;
-        final int LINE_HEIGHT = TEXT_HEIGHT * 11/8;
+        final int LINE_HEIGHT = TEXT_HEIGHT * 14/10;
         final int PADDING = dpToPixels(4);
         final int LABEL_OFFSET = FRAME_RADIUS + PADDING + TEXT_HEIGHT;
         final int MIN_LABEL_POINT_DISTANCE = dpToPixels(30);
