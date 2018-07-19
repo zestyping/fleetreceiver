@@ -32,12 +32,31 @@ public class PointEntity {
         return timeMillis - lastTransitionMillis;
     }
 
+    public long getSegmentSeconds() {
+        return getSegmentMillis() / 1000;
+    }
+
     public boolean isResting() {
         return type == 'r' || type == 's';
     }
 
     public boolean isTransition() {
         return type == 'g' || type == 's';
+    }
+
+    /** Formats a point into a string of at most 67 characters. */
+    public String format() {
+        return String.format(Locale.US, "%s;%+.5f;%+.5f;%+d;%d;%d;%d;%d%s",
+            Utils.formatUtcTimeSeconds(timeMillis),  // 20 chars
+            Utils.clamp(-90, 90, latitude),  // degrees, 9 chars
+            Utils.clamp(-180, 180, longitude),  // degrees, 10 chars
+            Utils.clamp(-9999, 9999, Math.round(altitude)),  // meters, 5 chars
+            Utils.clamp(0, 999, Math.round(speedKmh)),  // km/h, 3 chars
+            Utils.clamp(0, 360, Math.round(bearing)) % 360,  // degrees, 3 chars
+            Utils.clamp(0, 9999, Math.round(latLonSd)),  // meters, 4 chars
+            Utils.clamp(0, 99999, getSegmentSeconds()),  // seconds, 5 chars
+            type  // 1 char
+        );  // length <= 20 + 9 + 10 + 5 + 3 + 3 + 4 + 5 + 1 + 7 separators = 67
     }
 
     /** Formats a point for readability and debugging. */

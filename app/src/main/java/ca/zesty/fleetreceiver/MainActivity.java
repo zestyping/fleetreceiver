@@ -56,7 +56,6 @@ import org.mapsforge.map.rendertheme.InternalRenderTheme;
 import org.mapsforge.map.util.MapViewProjection;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -88,7 +87,7 @@ public class MainActivity extends BaseActivity {
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
     private GpsOutageReceiver mGpsOutageReceiver = new GpsOutageReceiver();
-    private SourceActivatedReceiver mSourceActivatedReceiver = new SourceActivatedReceiver();
+    private TargetActivatedReceiver mTargetActivatedReceiver = new TargetActivatedReceiver();
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
@@ -96,7 +95,7 @@ public class MainActivity extends BaseActivity {
     private Runnable mRunnable = null;
     private Marker mSelectionMarker = null;
     private Map<String, Long> mGpsOutageTimes = new HashMap<>();
-    private String mLastSharingRequestNumber = "+";
+    private String mLastForwardingDestinationNumber = "+236";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -126,7 +125,7 @@ public class MainActivity extends BaseActivity {
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
         registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsReceiver.ACTION_POINTS_ADDED));
         registerReceiver(mGpsOutageReceiver, new IntentFilter(SmsReceiver.ACTION_GPS_OUTAGE));
-        registerReceiver(mSourceActivatedReceiver, new IntentFilter(SmsReceiver.ACTION_SOURCE_ACTIVATED));
+        registerReceiver(mTargetActivatedReceiver, new IntentFilter(SmsReceiver.ACTION_TARGET_ACTIVATED));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -167,7 +166,7 @@ public class MainActivity extends BaseActivity {
         unregisterReceiver(mLogMessageReceiver);
         unregisterReceiver(mPointsAddedReceiver);
         unregisterReceiver(mGpsOutageReceiver);
-        unregisterReceiver(mSourceActivatedReceiver);
+        unregisterReceiver(mTargetActivatedReceiver);
         saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
@@ -219,8 +218,8 @@ public class MainActivity extends BaseActivity {
                 db.close();
             }
         }
-        if (item.getItemId() == R.id.action_request_sharing) {
-            requestSharing();
+        if (item.getItemId() == R.id.action_forward) {
+            forward();
         }
         if (item.getItemId() == R.id.action_load_map_data) {
             List<File> loadedFiles = new ArrayList<>();
@@ -233,6 +232,11 @@ public class MainActivity extends BaseActivity {
                 "filename ending in \".map\" and leave it in your Download folder.";
             u.showMessageBox("Load map data", message);
         }
+        if (item.getItemId() == R.id.action_export_database) {
+            if (exportDatabase()) {
+                u.showMessageBox("Export database", "Database exported to Download folder.");
+            }
+        }
         if (item.getItemId() == R.id.action_settings) {
             startActivity(new Intent(this, SettingsActivity.class));
         }
@@ -244,61 +248,30 @@ public class MainActivity extends BaseActivity {
     }
 
     void restoreDatabaseFromDownload() {
-        File directory;
-        try {
-            directory = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DOWNLOADS);
-        } catch (RuntimeException e) {
-            return;
-        }
+        File directory = Utils.getDownloadDirectory();
+        if (directory == null) return;  // fails during testing due to lack of mocks
         File source = new File(directory, "fleetreceiver.db");
         File target = getDatabasePath("database.tmp");
         if (source.canRead()) {
-            Log.i(TAG, "Copying " + source + " to " + target);
-            try {
-                InputStream in = new FileInputStream(source);
-                try {
-                    OutputStream out = new FileOutputStream(target);
-                    try {
-                        byte[] buffer = new byte[1024];
-                        int len;
-                        while ((len = in.read(buffer)) > 0) {
-                            out.write(buffer, 0, len);
-                        }
-                    } finally {
-                        out.close();
-                    }
-                } finally {
-                    in.close();
+            if (Utils.copyFile(source, target)) {
+                File existing = getDatabasePath("database");
+                if (existing.exists()) {
+                    Utils.moveFile(existing, getDatabasePath(Utils.format(
+                        "database.%s.bak", Utils.formatUtcTimeSeconds(Utils.getTime()))
+                    ));
                 }
-            } catch (IOException e) {
-                return;
+                Utils.moveFile(target, getDatabasePath("database"));
+                Utils.deleteFile(source);
             }
-            File existing = getDatabasePath("database");
-            if (existing.exists()) {
-                moveFile(existing, getDatabasePath(Utils.format(
-                    "database.%s.bak", Utils.formatUtcTimeSeconds(Utils.getTime()))
-                ));
-            }
-            moveFile(target, getDatabasePath("database"));
-            deleteFile(source);
         }
     }
 
-    void moveFile(File source, File target) {
-        if (source.renameTo(target)) {
-            Log.i(TAG, "Moved " + source + " to " + target);
-        } else {
-            Log.i(TAG, "Failed to move " + source + " to " + target);
-        }
-    }
-
-    void deleteFile(File file) {
-        if (file.delete()) {
-            Log.i(TAG, "Deleted " + file);
-        } else {
-            Log.i(TAG, "Failed to delete " + file);
-        }
+    boolean exportDatabase() {
+        File directory = Utils.getDownloadDirectory();
+        if (directory == null) return false;  // fails during testing due to lack of mocks
+        File source = getDatabasePath("database");
+        File target = new File(directory, "fleetreceiver.db");
+        return Utils.copyFile(source, target);
     }
 
     void populateReceiverId() {
@@ -310,7 +283,7 @@ public class MainActivity extends BaseActivity {
     void populateReceiverLabel() {
         if (u.getPref(Prefs.RECEIVER_LABEL).isEmpty()) {
             u.promptForString(
-                "Receiver Name",
+                "Receiver name",
                 "Enter a name for this receiver:",
                 "",
                 new Utils.StringCallback() {
@@ -334,27 +307,25 @@ public class MainActivity extends BaseActivity {
         setTitle(title);
     }
 
-    void requestSharing() {
+    void forward() {
         u.promptForString(
-            "Request to see points from another Receiver",
-            "Enter the other Receiver's mobile number:",
-            mLastSharingRequestNumber,
+            "Forward all points to another receiver",
+            "Other receiver's mobile number:",
+            mLastForwardingDestinationNumber,
             new Utils.StringCallback() {
-                public void run(String mobileNumber) {
-                    if (mobileNumber == null) return;
-                    mLastSharingRequestNumber = mobileNumber;
+                public void run(String number) {
+                    if (number == null) return;
+                    mLastForwardingDestinationNumber = number;
                     AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
                     try {
-                        SourceEntity source = new SourceEntity(
-                            SourceEntity.PENDING_ID, mobileNumber, "", null);
-                        if (db.getSourceDao().update(source) == 0) {
-                            db.getSourceDao().insert(source);
-                        }
+                        db.getMobileNumberDao().put(MobileNumberEntity.update(
+                            db.getMobileNumberDao().get(number),
+                            number, "target", null, TargetEntity.PENDING_ID));
                     } finally {
                         db.close();
                     }
-                    u.sendSms(0, mobileNumber, Utils.format(
-                        "fleet watch %s %s",
+                    u.sendSms(0, number, Utils.format(
+                        "fleet source %s %s",
                         u.getPref(Prefs.RECEIVER_ID),
                         u.getPref(Prefs.RECEIVER_LABEL)));
                 }
@@ -1115,21 +1086,28 @@ public class MainActivity extends BaseActivity {
         }
     }
 
-    class SourceActivatedReceiver extends BroadcastReceiver {
+    class TargetActivatedReceiver extends BroadcastReceiver {
         @Override public void onReceive(Context context, Intent intent) {
-            String sourceId = intent.getStringExtra(SmsReceiver.EXTRA_SOURCE_ID);
+            String targetId = intent.getStringExtra(SmsReceiver.EXTRA_TARGET_ID);
             AppDatabase db = AppDatabase.getDatabase(context);
-            String message;
             try {
-                SourceEntity source = db.getSourceDao().get(sourceId);
-                if (source != null) {
+                TargetEntity target = db.getTargetDao().get(targetId);
+                String number = db.getReceiverNumber(targetId);
+                if (target != null) {
                     u.showMessageBox(
-                        "Sharing request accepted",
+                        "Forwarding registration accepted",
                         Utils.format(
-                            "%s (%s) has agreed to share their map points with you.",
-                            source.label, source.mobileNumber
+                            "%s (%s) will now receive all the points on your map.",
+                            target.label, number
                         )
                     );
+                    for (ReporterEntity.WithPoint rp : db.getReporterDao().getAllActiveWithLatestPoints()) {
+                        String numbers = Utils.join(",", db.getReporterNumbers(rp.reporter.reporterId));
+                        u.sendSms(0, number, Utils.format(
+                            "fleet reporter %s %s %s", rp.reporter.reporterId, numbers, rp.reporter.label));
+                        u.sendSms(0, number, Utils.format(
+                            "fleet point %s %s", rp.reporter.reporterId, rp.point.format()));
+                    }
                 }
             } finally {
                 db.close();

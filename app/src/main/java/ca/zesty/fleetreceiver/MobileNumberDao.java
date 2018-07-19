@@ -28,4 +28,7 @@ public interface MobileNumberDao {
 
     @Delete
     void delete(MobileNumberEntity mobileNumber);
+
+    @Delete
+    void deleteAll(List<MobileNumberEntity> mobileNumbers);
 }

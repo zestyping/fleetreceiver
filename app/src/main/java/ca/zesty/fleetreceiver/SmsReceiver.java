@@ -22,15 +22,18 @@ public class SmsReceiver extends BroadcastReceiver {
     static final String EXTRA_REPORTER_ID = "reporter_id";
     static final String EXTRA_TIME_MILLIS = "time_millis";
 
-    static final Pattern PATTERN_FORWARD = Pattern.compile("^fleet forward (\\w+) *(.*)");
-    static final String ACTION_SOURCE_ACTIVATED = "FLEET_RECEIVER_SOURCE_ACTIVATED";
-    static final String EXTRA_SOURCE_ID = "source_id";
+    static final Pattern PATTERN_TARGET = Pattern.compile("^fleet target (\\w+) *(.*)");
+    static final String ACTION_TARGET_ACTIVATED = "FLEET_RECEIVER_TARGET_ACTIVATED";
+    static final String EXTRA_TARGET_ID = "target_id";
 
-    static final Pattern PATTERN_ACTIVATE = Pattern.compile("^fleet activate (\\w+) *(.*)");
+    static final Pattern PATTERN_ACTIVATE = Pattern.compile("^fleet activate (\\w+)");
+    static final Pattern PATTERN_REPORTER = Pattern.compile("^fleet reporter (\\w+) (\\S+) *(.*)");
+    static final String ACTION_REPORTER_ACTIVATED = "FLEET_RECEIVER_REPORTER_ACTIVATED";
 
     static final Pattern PATTERN_POINT = Pattern.compile("^fleet point (\\w+) *(.*)");
 
     @Override public void onReceive(Context context, Intent intent) {
+        Utils u = new Utils(context);
         SmsMessage sms = Utils.getSmsFromIntent(intent);
         if (sms == null) return;
 
@@ -58,6 +61,13 @@ public class SmsReceiver extends BroadcastReceiver {
                     return;
                 }
 
+                matcher = PATTERN_ACTIVATE.matcher(body);
+                if (matcher.matches()) {
+                    abortBroadcast();
+                    activateReporter(context, db, sender, matcher.group(1));
+                    return;
+                }
+
                 List<PointEntity> points = new ArrayList<>();
                 for (String part : body.trim().split("\\s+")) {
                     PointEntity point = PointEntity.parse(reporter.reporterId, null, part);
@@ -66,37 +76,121 @@ public class SmsReceiver extends BroadcastReceiver {
                 Log.i(TAG, "Points found in this message: " + points.size());
                 if (points.size() > 0) {
                     db.getPointDao().insertAll(points.toArray(new PointEntity[points.size()]));
-                    PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);
-                    reporter.latestPointId = latestPoint.pointId;
-                    db.getReporterDao().put(reporter);
+                    updateLatestPoint(db, reporter);
+                    context.sendBroadcast(new Intent(ACTION_POINTS_ADDED));
                     for (PointEntity point : points) {
                         MainActivity.postLogMessage(context, reporter.label + ": " + point);
+                        forwardToActiveTargets(context, db, Utils.format(
+                            "fleet point %s %s", point.reporterId, point.format()));
                     }
-                    context.sendBroadcast(new Intent(ACTION_POINTS_ADDED));
                 }
             }
 
-            Matcher matcher = PATTERN_FORWARD.matcher(body);
-            if (matcher.matches()) {
-                activateSource(context, db, sender, matcher.group(1), matcher.group(2));
-                return;
+            String receiverId = mobileNumber != null ? mobileNumber.receiverId : null;
+            if (receiverId != null) {
+                Matcher matcher = PATTERN_TARGET.matcher(body);
+                if (matcher.matches()) {
+                    activateTarget(context, db, mobileNumber, matcher.group(1), matcher.group(2));
+                }
+
+                matcher = PATTERN_REPORTER.matcher(body);
+                if (matcher.matches()) {
+                    receiveReporter(context, db, mobileNumber, matcher.group(1), matcher.group(2), matcher.group(3));
+                }
+
+                matcher = PATTERN_POINT.matcher(body);
+                if (matcher.matches()) {
+                    receivePoint(context, db, mobileNumber, matcher.group(1), matcher.group(2));
+                }
             }
         } finally {
             db.close();
         }
     }
 
-    private void activateSource(Context context, AppDatabase db, String mobileNumber, String sourceId, String label) {
-        SourceEntity source = db.getSourceDao().get(SourceEntity.PENDING_ID);
-        if (source != null && mobileNumber.equals(source.mobileNumber)) {
-            db.getSourceDao().delete(source);
-            source = new SourceEntity(
-                sourceId, mobileNumber, label, System.currentTimeMillis());
-            if (db.getSourceDao().update(source) == 0) {
-                db.getSourceDao().insert(source);
+    private void updateLatestPoint(AppDatabase db, ReporterEntity reporter) {
+        PointEntity latestPoint = db.getPointDao().getLatestPointForReporter(reporter.reporterId);
+        reporter.latestPointId = latestPoint.pointId;
+        db.getReporterDao().put(reporter);
+    }
+
+    private void forwardToActiveTargets(Context context, AppDatabase db, String message) {
+        forwardToActiveTargets(context, db, message, null);
+    }
+
+    private void forwardToActiveTargets(Context context, AppDatabase db, String message, String sourceId) {
+        Utils u = new Utils(context);
+        for (TargetEntity target : db.getTargetDao().getAllActive()) {
+            String number = db.getReceiverNumber(target.targetId);
+            if (number != null && !target.targetId.equals(sourceId)) {
+                Log.i(TAG, "Forwarding to target: " + target);
+                u.sendSms(0, number, message);
             }
-            context.sendBroadcast(new Intent(ACTION_SOURCE_ACTIVATED)
-                .putExtra(EXTRA_SOURCE_ID, sourceId));
+        }
+    }
+
+    private void activateTarget(Context context, AppDatabase db, MobileNumberEntity mobileNumber, String targetId, String label) {
+        if (!TargetEntity.PENDING_ID.equals(mobileNumber.receiverId)) return;
+        db.getTargetDao().put(new TargetEntity(targetId, label, Utils.getTime()));
+        mobileNumber.receiverId = targetId;
+        db.getMobileNumberDao().put(mobileNumber);
+        context.sendBroadcast(new Intent(ACTION_TARGET_ACTIVATED)
+            .putExtra(EXTRA_TARGET_ID, targetId));
+    }
+
+    private void activateReporter(Context context, AppDatabase db, String number, String reporterId) {
+        ReporterEntity reporter = db.getReporterDao().get(reporterId);
+        if (reporter != null) {
+            db.deactivateReporterByNumber(number);
+            reporter.activationMillis = System.currentTimeMillis();
+            db.getReporterDao().put(reporter);
+            db.getMobileNumberDao().put(MobileNumberEntity.update(
+                db.getMobileNumberDao().get(number),
+                number, reporter.label, reporterId, null
+            ));
+            context.sendBroadcast(new Intent(SmsReceiver.ACTION_REPORTER_ACTIVATED));
+            String numbers = Utils.join(",", db.getReporterNumbers(reporterId));
+            forwardToActiveTargets(context, db, Utils.format(
+                "fleet reporter %s %s %s", reporterId, numbers, reporter.label));
+        }
+    }
+
+    private void receiveReporter(Context context, AppDatabase db, MobileNumberEntity mobileNumber, String reporterId, String reporterNumbers, String label) {
+        String sourceId = mobileNumber.receiverId;
+        SourceEntity source = db.getSourceDao().get(sourceId);
+        if (source == null || source.activationMillis == null) return;
+        for (MobileNumberEntity number : db.getMobileNumberDao().getAllByReporterId(reporterId)) {
+            number.reporterId = null;
+            db.getMobileNumberDao().put(number);
+        }
+        for (String reporterNumber : reporterNumbers.split(",")) {
+            db.getMobileNumberDao().put(MobileNumberEntity.update(
+                db.getMobileNumberDao().get(reporterNumber),
+                reporterNumber, label, reporterId, null
+            ));
+        }
+        db.getReporterDao().put(new ReporterEntity(
+            reporterId, sourceId, label, Utils.getTime()));
+        context.sendBroadcast(new Intent(ACTION_REPORTER_ACTIVATED));
+    }
+
+    private void receivePoint(Context context, AppDatabase db, MobileNumberEntity mobileNumber, String reporterId, String formattedPoint) {
+        String sourceId = mobileNumber.receiverId;
+        SourceEntity source = db.getSourceDao().get(sourceId);
+        if (source == null || source.activationMillis == null) return;
+
+        PointEntity point = PointEntity.parse(reporterId, sourceId, formattedPoint);
+        if (point != null) {
+            Log.i(TAG, "Received forwarded point from " + source.label + ": " + point);
+            db.getPointDao().insertAll(point);
+            ReporterEntity reporter = db.getReporterDao().get(reporterId);
+            if (reporter != null) {
+                updateLatestPoint(db, reporter);
+                MainActivity.postLogMessage(context, reporter.label + ": " + point);
+            }
+            context.sendBroadcast(new Intent(ACTION_POINTS_ADDED));
+            forwardToActiveTargets(context, db, Utils.format(
+                "fleet point %s %s", point.reporterId, point.format()), sourceId);
         }
     }
 }

@@ -30,6 +30,11 @@ public interface ReporterDao {
            "order by time_millis desc")
     List<ReporterEntity.WithPoint> getAllReportedSince(long minTimeMillis);
 
+    @Query("select * from reporters where source_id = :sourceId " +
+           "order by activation_millis desc")
+    List<ReporterEntity> getAllBySource(String sourceId);
+
+
     @Insert(onConflict = REPLACE)
     void put(ReporterEntity reporter);
 }

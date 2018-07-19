@@ -28,13 +28,13 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:text="Now accepting registrations:"
-          android:textSize="18dp" />
+          android:textSize="18sp" />
 
       <TextView
           android:id="@+id/receiver_number"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:textSize="32dp"
+          android:textSize="32sp"
           android:focusable="true"
           android:longClickable="true"
           android:textIsSelectable="true" />
@@ -43,17 +43,65 @@
 
   </android.support.v7.widget.CardView>
 
-  <TextView
+  <ScrollView
       android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginBottom="6dp"
-      android:text="Reporters registered:"
-      android:textSize="14dp" />
+      android:layout_height="0dp"
+      android:layout_weight="1">
 
-  <TableLayout
-      android:id="@+id/reporter_table"
-      android:layout_width="match_parent"
-      android:layout_height="fill_parent"
-      android:stretchColumns="1"
-      android:shrinkColumns="1" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+      <TextView
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginBottom="6sp"
+          android:textStyle="bold"
+          android:text="Reporters registered:"
+          android:textSize="14sp" />
+
+      <TableLayout
+          android:id="@+id/reporter_table"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:stretchColumns="1"
+          android:shrinkColumns="1" />
+
+      <TextView
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="24sp"
+          android:layout_marginBottom="6sp"
+          android:textStyle="bold"
+          android:text="Forwarding sources:"
+          android:textSize="14sp" />
+
+      <TableLayout
+          android:id="@+id/source_table"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:stretchColumns="1"
+          android:shrinkColumns="1" />
+
+      <TextView
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="24sp"
+          android:layout_marginBottom="6sp"
+          android:textStyle="bold"
+          android:text="Forwarding targets:"
+          android:textSize="14sp" />
+
+      <TableLayout
+          android:id="@+id/target_table"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:stretchColumns="1"
+          android:shrinkColumns="1" />
+
+    </LinearLayout>
+
+  </ScrollView>
+
 </LinearLayout>

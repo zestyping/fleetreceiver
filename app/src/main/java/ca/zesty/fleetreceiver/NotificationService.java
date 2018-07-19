@@ -24,7 +24,7 @@ public class NotificationService extends BaseService {
             SmsReceiver.ACTION_POINTS_ADDED
         ));
         registerReceiver(mReporterRegisteredReceiver, new IntentFilter(
-            RegistrationActivity.ACTION_FLEET_RECEIVER_REPORTER_REGISTERED
+            SmsReceiver.ACTION_REPORTER_ACTIVATED
         ));
     }
 

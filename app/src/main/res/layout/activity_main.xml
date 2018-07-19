@@ -131,12 +131,12 @@
   <TextView
       android:id="@+id/message_log"
       android:layout_width="match_parent"
-      android:layout_height="64dp"
+      android:layout_height="64sp"
       android:paddingLeft="@dimen/activity_horizontal_margin"
       android:paddingRight="@dimen/activity_horizontal_margin"
-      android:layout_marginTop="4dp"
-      android:layout_marginBottom="4dp"
-      android:textSize="10dp"
+      android:layout_marginTop="4sp"
+      android:layout_marginBottom="4sp"
+      android:textSize="10sp"
       android:focusable="true"
       android:longClickable="true"
       android:textIsSelectable="true" />

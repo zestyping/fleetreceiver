@@ -36,12 +36,17 @@ import android.widget.TextView;
 import com.crashlytics.android.Crashlytics;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -91,6 +96,14 @@ public class Utils {
 
     public static String plural(long count) {
         return (count == 1) ? "" : "s";
+    }
+
+    public static String join(String separator, Collection<String> elements) {
+        String result = "";
+        for (String element : elements) {
+            result += (result.isEmpty() ? "" : separator) + element;
+        }
+        return result;
     }
 
     public static long clamp(long min, long max, long value) {
@@ -264,6 +277,67 @@ public class Utils {
         }
     }
 
+    public static File getExternalDirectory() {
+        try {
+            return Environment.getExternalStorageDirectory();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    public static File getDownloadDirectory() {
+        try {
+            return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    public static boolean copyFile(File source, File target) {
+        try {
+            InputStream in = new FileInputStream(source);
+            try {
+                OutputStream out = new FileOutputStream(target);
+                try {
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, len);
+                    }
+                } finally {
+                    out.close();
+                }
+            } finally {
+                in.close();
+            }
+        } catch (IOException e) {
+            Log.i(TAG, "Failed to copy " + source + " to " + target + ": " + e);
+            return false;
+        }
+        Log.i(TAG, "Copied " + source + " to " + target);
+        return true;
+    }
+
+    public static boolean moveFile(File source, File target) {
+        if (source.renameTo(target)) {
+            Log.i(TAG, "Moved " + source + " to " + target);
+            return true;
+        } else {
+            Log.i(TAG, "Failed to move " + source + " to " + target);
+            return false;
+        }
+    }
+
+    public static boolean deleteFile(File file) {
+        if (file.delete()) {
+            Log.i(TAG, "Deleted " + file);
+            return true;
+        } else {
+            Log.i(TAG, "Failed to delete " + file);
+            return false;
+        }
+    }
+
     public static void log(String tag, String message, Object... args) {
         logHelper(tag, args.length > 0 ? Utils.format(message, args) : message, false);
     }
@@ -291,13 +365,8 @@ public class Utils {
             packageName = "ca.zesty";
         }
         String filename = Utils.format("%s-%s.txt", packageName, timestamp.substring(0, 10));
-        File directory;
-        try {
-            directory = Environment.getExternalStorageDirectory();
-        } catch (RuntimeException e) {
-            // Fails during testing because getExternalStorageDirectory() is not mocked.
-            return;
-        }
+        File directory = getExternalDirectory();
+        if (directory == null) return;  // fails during testing due to lack of mocks
         File file = new File(directory, filename);
         try {
             FileWriter writer = new FileWriter(file, true);
@@ -432,7 +501,7 @@ public class Utils {
         if (number == null && slot == 0) {
             number = getTelephonyManager().getLine1Number();
         }
-        return number != null ? "+" + number.replaceAll("^\\+*", "") : null;
+        return (number == null || number.isEmpty()) ? null : "+" + number.replaceAll("^\\+*", "");
     }
 
     public int getNumSimSlots() {
