@@ -127,6 +127,12 @@ public class Utils {
         return RFC3339_UTC_MILLIS.format(new Date(timeMillis));
     }
 
+    public static String formatLocalTimeOfDay(long timeMillis) {
+        SimpleDateFormat format = new SimpleDateFormat("HH:mm", Locale.US);
+        format.setTimeZone(TimeZone.getDefault());
+        return format.format(new Date(timeMillis));
+    }
+
     /** Parses an RFC3339 timestamp in UTC to give a time in milliseconds, or null. */
     public static Long parseTimestamp(String timestamp) {
         Matcher matcher = PATTERN_TIMESTAMP.matcher(timestamp);
@@ -491,6 +497,10 @@ public class Utils {
         void run(String str);
     }
 
+    interface Callback {
+        void run();
+    }
+
     public void hide(int id) {
         show(id, false);
     }
@@ -533,11 +543,15 @@ public class Utils {
     }
 
     /** Shows a message box with a single button that invokes the given listener. */
-    public void showMessageBox(String title, String message, String buttonLabel, DialogInterface.OnClickListener listener) {
-        new AlertDialog.Builder(context)
+    public AlertDialog showMessageBox(String title, String message, String buttonLabel, final Callback callback) {
+        return new AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton(buttonLabel, listener)
+            .setPositiveButton(buttonLabel, callback == null ? null : new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface dialog, int which) {
+                    callback.run();
+                }
+            })
             .show();
     }
 

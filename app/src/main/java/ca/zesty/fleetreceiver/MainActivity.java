@@ -306,6 +306,7 @@ public class MainActivity extends BaseActivity {
         mMapView.getLayerManager().getLayers().clear();
         mMapView.addLayer(tileRendererLayer);
         mMapView.addLayer(new ReporterLayer());
+        Log.i(TAG, "map view: " + mMapView.getWidth() + " x " + mMapView.getHeight());
         return multiMap;
     }
 
@@ -752,36 +753,45 @@ public class MainActivity extends BaseActivity {
     }
 
     class ReporterLayer extends Layer {
+        final int TEXT_SIZE = 12;
         final int DOT_RADIUS = dpToPixels(6);
+        final int LABEL_DOT_RADIUS = dpToPixels(3);
         final int TAP_RADIUS = dpToPixels(18);
-        final int SHADOW = dpToPixels(6);
+        final int SHADOW_OFFSET = dpToPixels(6);
         final int FRAME_RADIUS = dpToPixels(12);
         final int ARROW_TIP_SIZE = dpToPixels(9);
         final int TEXT_HEIGHT = dpToPixels(12) * 3/4;
+        final int LINE_HEIGHT = TEXT_HEIGHT * 11/8;
         final int PADDING = dpToPixels(4);
         final int LABEL_OFFSET = FRAME_RADIUS + PADDING + TEXT_HEIGHT;
+        final int MIN_LABEL_POINT_DISTANCE = dpToPixels(30);
+        final int MERGE_LABEL_POINT_PIXELS = dpToPixels(12);
+        final int MERGE_LABEL_POINT_METERS = 60;
 
         List<Pair<String, LatLong>> mDrawnPositions = new ArrayList<>();
 
         @Override public void draw(BoundingBox boundingBox, byte zoomLevel, Canvas canvas, Point topLeftPt) {
             long mapSize = MercatorProjection.getMapSize(zoomLevel, this.displayModel.getTileSize());
             Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
-            Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW);
+            Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW_OFFSET);
 
             Paint backgroundPaint = getFillPaint(0x60ffffff);
             Paint dotPaint = getFillPaint(0xff20a040);
-            setShadowLayer(dotPaint, SHADOW, 0, 0, 0xc0000000);
+            setShadowLayer(dotPaint, SHADOW_OFFSET, 0, 0, 0xc0000000);
             Paint arrowPaint = getStrokePaint(0xff20a040, 3);
             Paint trackPaint = getStrokePaint(0xc020a040, 3, Cap.ROUND);
             setDashPattern(trackPaint, 2, 6);
             Paint arrowOutlinePaint = getStrokePaint(0xc0ffffff, 3);
             Paint selectedArrowOutlinePaint = getStrokePaint(0xffffffff, 2);
-            Paint arrowTextPaint = getTextPaint(0xff20a040, 12, FontStyle.BOLD, Align.CENTER);
+            Paint arrowTextPaint = getTextPaint(0xff20a040, TEXT_SIZE, FontStyle.BOLD, Align.CENTER);
             Paint circlePaint = getStrokePaint(0xffffffff, 2);
-            Paint textPaint = getTextPaint(0xff000000, 12, FontStyle.BOLD, Align.CENTER);
+            Paint textPaint = getTextPaint(0xff000000, TEXT_SIZE, FontStyle.BOLD, Align.CENTER);
             Paint softOutlinePaint = getTextOutlinePaint(textPaint, 0xc0ffffff, 4);
             Paint hardOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 2);
             Paint selectedOutlinePaint = getTextOutlinePaint(textPaint, 0xffffffff, 4);
+            Paint labelDotPaint = getFillPaint(0xff000000);
+            Paint timeLabelPaint = getTextPaint(0xff20a040, TEXT_SIZE, FontStyle.NORMAL, Align.CENTER);
+            Paint timeLabelOutlinePaint = getTextOutlinePaint(timeLabelPaint, 0xffffffff, 2);
 
             Point selectedPt = null;
             long now = System.currentTimeMillis();
@@ -842,31 +852,88 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedPt != null) {
-                long timeMillis = reporterPoints.get(mSelectedReporterId).point.timeMillis;
-                String label = reporterPoints.get(mSelectedReporterId).reporter.label +
-                    " (" + Utils.describeTime(timeMillis) + ")";
+                PointEntity selectedPoint = reporterPoints.get(mSelectedReporterId).point;
+                String label = reporterPoints.get(mSelectedReporterId).reporter.label;
                 int cx = (int) selectedPt.x;
                 int cy = (int) selectedPt.y;
-                LatLong reckonPos = deadReckon(
-                    reporterPoints.get(mSelectedReporterId).point, arrowSeconds);
+                LatLong reckonPos = deadReckon(selectedPoint, arrowSeconds);
                 Point arrowHead = toPixels(reckonPos, mapSize, topLeftPt);
 
-                boolean first = true;
-                long startMillis = now - u.getIntPref(Prefs.HISTORICAL_TRACK_HOURS, 24) * HOUR;
-                Path track = AndroidGraphicFactory.INSTANCE.createPath();
+                // Draw the historical track.
+                long minMillis = now - u.getIntPref(Prefs.HISTORICAL_TRACK_HOURS, 24) * HOUR;
+                List<PointEntity> points;
                 AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
                 try {
-                    for (PointEntity point : db.getPointDao().getAllForReporterSince(mSelectedReporterId, startMillis)) {
-                        Point pt = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPt);
-                        if (first) track.moveTo((float) pt.x, (float) pt.y);
-                        else track.lineTo((float) pt.x, (float) pt.y);
-                        first = false;
-                    }
+                    points = db.getPointDao().getAllForReporterSince(mSelectedReporterId, minMillis);
                 } finally {
                     db.close();
                 }
+                Path track = AndroidGraphicFactory.INSTANCE.createPath();
+                boolean first = true;
+                for (PointEntity point : points) {
+                    Point pt = toPixels(new LatLong(point.latitude, point.longitude), mapSize, topLeftPt);
+                    if (first) track.moveTo((float) pt.x, (float) pt.y);
+                    else track.lineTo((float) pt.x, (float) pt.y);
+                    first = false;
+                }
                 canvas.drawPath(track, trackPaint);
 
+                // Decide how many points at the end of the track to merge with the last point.
+                int n = points.size();
+                int mergedWithLast = n - 1;
+                LatLong selectedLatLong = new LatLong(selectedPoint.latitude, selectedPoint.longitude);
+                for (int i = n - 1; i >= 0; i--) {
+                    PointEntity point = points.get(i);
+                    LatLong latLong = new LatLong(point.latitude, point.longitude);
+                    Point pt = toPixels(latLong, mapSize, topLeftPt);
+                    if (pt.distance(selectedPt) < MERGE_LABEL_POINT_PIXELS &&
+                        latLong.sphericalDistance(selectedLatLong) < MERGE_LABEL_POINT_METERS) {
+                        mergedWithLast = i;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Draw the time labels on the track (excluding the possibly merged last point).
+                List<Point> labelPts = new ArrayList<>();
+                List<Long> startMillis = new ArrayList<>();
+                List<Long> endMillis = new ArrayList<>();
+                LatLong prevLatLong = null;
+                Point prevPt = null;
+                for (int i = 0; i < mergedWithLast; i++) {
+                    PointEntity point = points.get(i);
+                    LatLong latLong = new LatLong(point.latitude, point.longitude);
+                    Point pt = toPixels(latLong, mapSize, topLeftPt);
+                    if (prevPt != null && pt.distance(prevPt) < MERGE_LABEL_POINT_PIXELS &&
+                        prevLatLong != null && latLong.sphericalDistance(prevLatLong) < MERGE_LABEL_POINT_METERS) {
+                        endMillis.set(endMillis.size() - 1, point.timeMillis);
+                    } else if (pt.distance(selectedPt) > MIN_LABEL_POINT_DISTANCE &&
+                        (prevPt == null || pt.distance(prevPt) >
+                            MIN_LABEL_POINT_DISTANCE)) {
+                        labelPts.add(pt);
+                        startMillis.add(point.timeMillis);
+                        endMillis.add(point.timeMillis);
+                        prevPt = pt;
+                        prevLatLong = latLong;
+                    }
+                }
+
+                for (int i = 0; i < labelPts.size(); i++) {
+                    Point pt = labelPts.get(i);
+                    long start = startMillis.get(i);
+                    long end = endMillis.get(i);
+                    String timeLabel = Utils.formatLocalTimeOfDay(start);
+                    if (end > start + 2*MINUTE) {
+                        timeLabel += "\u2013" + Utils.formatLocalTimeOfDay(end);
+                    }
+                    canvas.drawCircle((int) pt.x, (int) pt.y, LABEL_DOT_RADIUS, labelDotPaint);
+                    int textX = (int) pt.x;
+                    int textY = (int) (pt.y + PADDING + TEXT_HEIGHT);
+                    canvas.drawText(timeLabel, textX, textY, timeLabelOutlinePaint);
+                    canvas.drawText(timeLabel, textX, textY, timeLabelPaint);
+                }
+
+                // Draw the selection frame around the dot.
                 Path path = AndroidGraphicFactory.INSTANCE.createPath();
                 int scale = FRAME_RADIUS / 2;
                 for (int xs = -1; xs <= 1; xs += 2) {
@@ -876,14 +943,14 @@ public class MainActivity extends BaseActivity {
                         path.lineTo(cx + xs*scale, cy + ys*scale*2);
                     }
                 }
-
                 Paint frameShadowPaint = getStrokePaint(0xffffffff, 2);
-                setShadowLayer(frameShadowPaint, SHADOW/2, 0, 0, 0xff000000);
+                setShadowLayer(frameShadowPaint, SHADOW_OFFSET/2, 0, 0, 0xff000000);
                 canvas.drawPath(path, frameShadowPaint);
 
+                // Draw the velocity arrow.
                 drawArrowOutline(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, selectedArrowOutlinePaint, 2);
                 if (drawArrow(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, arrowPaint)) {
-                    String arrowLabel = Utils.describePeriod(arrowSeconds * 1000, true);
+                    String arrowLabel = "+" + Utils.describePeriod(arrowSeconds * 1000, true);
                     // Place above or below the arrowhead.
                     int ax = (int) arrowHead.x;
                     int ay = (int) arrowHead.y + (arrowHead.y > selectedPt.y ? 1 : -1) * (TEXT_HEIGHT/2 + PADDING) + TEXT_HEIGHT/2;
@@ -907,15 +974,28 @@ public class MainActivity extends BaseActivity {
                     canvas.drawText(arrowLabel, ax, ay, arrowTextPaint);
                 }
 
+                // Draw the dot.
                 canvas.drawCircle(cx, cy, DOT_RADIUS, dotPaint);
                 canvas.drawCircle(cx, cy, DOT_RADIUS + 1, getStrokePaint(0xc0000000, 2));
                 canvas.drawCircle(cx, cy, DOT_RADIUS, circlePaint);
-                drawStalenessArc(canvas, cx, cy, timeMillis);
+                drawStalenessArc(canvas, cx, cy, selectedPoint.timeMillis);
 
+                // Draw the label.
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, selectedOutlinePaint);
                 canvas.drawPath(path, getStrokePaint(0xc0000000, 4, Cap.ROUND));
                 canvas.drawPath(path, getStrokePaint(0xffffffff, 2, Cap.ROUND));
                 canvas.drawText(label, cx, cy + LABEL_OFFSET, textPaint);
+
+                // Draw the time label.
+                String timeLabel = Utils.formatLocalTimeOfDay(selectedPoint.timeMillis);
+                if (!points.isEmpty()) {
+                    long mergedStartMillis = points.get(mergedWithLast).timeMillis;
+                    if (mergedStartMillis < selectedPoint.timeMillis - MINUTE) {
+                        timeLabel = Utils.formatLocalTimeOfDay(mergedStartMillis) + "\u2013" + timeLabel;
+                    }
+                }
+                canvas.drawText(timeLabel, cx, cy + LABEL_OFFSET + LINE_HEIGHT, selectedOutlinePaint);
+                canvas.drawText(timeLabel, cx, cy + LABEL_OFFSET + LINE_HEIGHT, textPaint);
             }
 
             mDrawnPositions = drawnPositions;
