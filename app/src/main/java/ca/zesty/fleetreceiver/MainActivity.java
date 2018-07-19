@@ -487,6 +487,7 @@ public class MainActivity extends BaseActivity {
             mSelectedReporterId = null;
             updateReporterFrame();
         }
+        saveMapViewPosition();
         mMapView.getLayerManager().redrawLayers();
     }
 
@@ -775,7 +776,7 @@ public class MainActivity extends BaseActivity {
             Rectangle canvasRect = new Rectangle(0, 0, canvas.getWidth(), canvas.getHeight());
             Rectangle canvasEnvelope = canvasRect.envelope(DOT_RADIUS + SHADOW_OFFSET);
 
-            Paint backgroundPaint = getFillPaint(0x60ffffff);
+            Paint backgroundPaint = getFillPaint(0x68ffffff);
             Paint dotPaint = getFillPaint(0xff20a040);
             setShadowLayer(dotPaint, SHADOW_OFFSET, 0, 0, 0xc0000000);
             Paint arrowPaint = getStrokePaint(0xff20a040, 3);
@@ -852,6 +853,7 @@ public class MainActivity extends BaseActivity {
 
             // Draw selected reporter last (i.e. on top).
             if (selectedPt != null) {
+                drawRect(canvas, canvasEnvelope, backgroundPaint);
                 PointEntity selectedPoint = reporterPoints.get(mSelectedReporterId).point;
                 String label = reporterPoints.get(mSelectedReporterId).reporter.label;
                 int cx = (int) selectedPt.x;
