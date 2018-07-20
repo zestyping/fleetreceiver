@@ -144,6 +144,8 @@ public class MainActivity extends BaseActivity {
 
         if (u.getBooleanPref(Prefs.PLAY_STORE_REQUESTED)) {
             u.setPref(Prefs.PLAY_STORE_REQUESTED, false);
+            exportDatabase(null);
+            exportDatabase("fleetreceiver.db");
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
                 "market://details?id=ca.zesty.fleetreceiver")));
         }
@@ -227,8 +229,10 @@ public class MainActivity extends BaseActivity {
             u.showMessageBox("Load base maps", message);
         }
         if (item.getItemId() == R.id.action_export_database) {
-            if (exportDatabase()) {
-                u.showMessageBox("Export database", "Database exported to Download folder.");
+            File target = exportDatabase(null);
+            if (target != null) {
+                u.showMessageBox("Export database",
+                    Utils.format("Database exported to %s.", target));
             }
         }
         if (item.getItemId() == R.id.action_settings) {
@@ -242,6 +246,13 @@ public class MainActivity extends BaseActivity {
     }
 
     void restoreDatabaseFromDownload() {
+        AppDatabase db = AppDatabase.getDatabase(this);
+        try {
+            if (!db.getReporterDao().getAll().isEmpty()) return;
+            if (!db.getSourceDao().getAll().isEmpty()) return;
+        } finally {
+            db.close();
+        }
         File directory = Utils.getDownloadDirectory();
         if (directory == null) return;  // fails during testing due to lack of mocks
         File source = new File(directory, "fleetreceiver.db");
@@ -255,17 +266,20 @@ public class MainActivity extends BaseActivity {
                     ));
                 }
                 Utils.moveFile(target, getDatabasePath("database"));
-                Utils.deleteFile(source);
             }
         }
     }
 
-    boolean exportDatabase() {
+    File exportDatabase(String destFilename) {
+        if (destFilename == null) {
+            String timestamp = Utils.formatUtcTimeSeconds(Utils.getTime());
+            destFilename = Utils.format("fleetreceiver.%s.db", timestamp);
+        }
         File directory = Utils.getDownloadDirectory();
-        if (directory == null) return false;  // fails during testing due to lack of mocks
+        if (directory == null) return null;  // fails during testing due to lack of mocks
         File source = getDatabasePath("database");
-        File target = new File(directory, "fleetreceiver.db");
-        return Utils.copyFile(source, target);
+        File target = new File(directory, destFilename);
+        return Utils.copyFile(source, target) ? target : null;
     }
 
     void populateReceiverId() {
