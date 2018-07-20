@@ -11,15 +11,18 @@ import static android.arch.persistence.room.OnConflictStrategy.REPLACE;
 
 @Dao
 public interface TargetDao {
+    @Query("select * from targets where target_id = :targetId")
+    TargetEntity get(String targetId);
+
+    @Query("select * from targets where target_id = :targetId and activation_millis is not null")
+    TargetEntity getActive(String targetId);
+
     @Query("select * from targets")
     List<TargetEntity> getAll();
 
     @Query("select * from targets where activation_millis is not null " +
         "order by activation_millis desc")
     List<TargetEntity> getAllActive();
-
-    @Query("select * from targets where target_id = :targetId")
-    TargetEntity get(String targetId);
 
     @Insert(onConflict = REPLACE)
     void put(TargetEntity target);

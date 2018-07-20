@@ -15,18 +15,20 @@ import java.util.List;
     ReporterEntity.class,
     PointEntity.class,
     SourceEntity.class,
-    TargetEntity.class
-}, exportSchema = false, version = 6)
+    TargetEntity.class,
+    ReporterTargetEntity.class
+}, exportSchema = false, version = 7)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MobileNumberDao getMobileNumberDao();
     public abstract ReporterDao getReporterDao();
     public abstract PointDao getPointDao();
     public abstract SourceDao getSourceDao();
     public abstract TargetDao getTargetDao();
+    public abstract ReporterTargetDao getReporterTargetDao();
 
     public static AppDatabase getDatabase(Context context) {
         return Room.databaseBuilder(context, AppDatabase.class, "database")
-            .addMigrations(MIGRATION_5_TO_6)
+            .addMigrations(MIGRATION_5_TO_6, MIGRATION_6_TO_7)
             .allowMainThreadQueries()
             .fallbackToDestructiveMigration()
             .build();
@@ -51,11 +53,22 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    static final Migration MIGRATION_6_TO_7 = new Migration(6, 7) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("create table if not exists reporter_targets (" +
+                "reporter_target_id text not null, " +
+                "reporter_id text, " +
+                "target_id text, " +
+                "primary key (reporter_target_id)" +
+            ");");
+        }
+    };
+
     /** Deactivates the reporter associated with a given mobile number. */
     public void deactivateReporterByNumber(String number) {
         MobileNumberEntity mobileNumber = getMobileNumberDao().get(number);
         if (mobileNumber != null && mobileNumber.reporterId != null) {
-            ReporterEntity reporter = getReporterDao().get(mobileNumber.reporterId);
+            ReporterEntity reporter = getReporterDao().getActive(mobileNumber.reporterId);
             if (reporter != null) {
                 reporter.activationMillis = null;
                 getReporterDao().put(reporter);

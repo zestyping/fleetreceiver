@@ -21,7 +21,7 @@ public class TargetEntity {
     }
 
     public String toString() {
-        return Utils.format("<target %s: %s, %s>",
+        return Utils.format("<Target %s: %s, %s>",
             targetId, label, activationMillis == null ? "inactive" :
                 "activated " + Utils.describeTime(activationMillis));
     }

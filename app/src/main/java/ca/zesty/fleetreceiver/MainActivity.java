@@ -87,7 +87,6 @@ public class MainActivity extends BaseActivity {
     private LogMessageReceiver mLogMessageReceiver = new LogMessageReceiver();
     private PointsAddedReceiver mPointsAddedReceiver = new PointsAddedReceiver();
     private GpsOutageReceiver mGpsOutageReceiver = new GpsOutageReceiver();
-    private TargetActivatedReceiver mTargetActivatedReceiver = new TargetActivatedReceiver();
     private MapView mMapView;
     private Map<String, ReporterEntity.WithPoint> mReporterPoints = new HashMap<>();
     private String mSelectedReporterId = null;
@@ -125,7 +124,6 @@ public class MainActivity extends BaseActivity {
         registerReceiver(mLogMessageReceiver, new IntentFilter(ACTION_FLEET_RECEIVER_LOG_MESSAGE));
         registerReceiver(mPointsAddedReceiver, new IntentFilter(SmsReceiver.ACTION_POINTS_ADDED));
         registerReceiver(mGpsOutageReceiver, new IntentFilter(SmsReceiver.ACTION_GPS_OUTAGE));
-        registerReceiver(mTargetActivatedReceiver, new IntentFilter(SmsReceiver.ACTION_TARGET_ACTIVATED));
 
         findViewById(R.id.zoom_points).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -166,7 +164,6 @@ public class MainActivity extends BaseActivity {
         unregisterReceiver(mLogMessageReceiver);
         unregisterReceiver(mPointsAddedReceiver);
         unregisterReceiver(mGpsOutageReceiver);
-        unregisterReceiver(mTargetActivatedReceiver);
         saveMapViewPosition();
         mMapView.destroyAll();
         AndroidGraphicFactory.clearResourceMemoryCache();
@@ -204,7 +201,7 @@ public class MainActivity extends BaseActivity {
         if (item.getItemId() == R.id.action_request_location_now) {
             AppDatabase db = AppDatabase.getDatabase(this);
             try {
-                ReporterEntity reporter = db.getReporterDao().get(mSelectedReporterId);
+                ReporterEntity reporter = db.getReporterDao().getActive(mSelectedReporterId);
                 if (reporter != null) {
                     boolean requested = false;
                     for (MobileNumberEntity mobileNumber : db.getMobileNumberDao().getAllByReporterId(mSelectedReporterId)) {
@@ -217,9 +214,6 @@ public class MainActivity extends BaseActivity {
             } finally {
                 db.close();
             }
-        }
-        if (item.getItemId() == R.id.action_forward) {
-            forward();
         }
         if (item.getItemId() == R.id.action_load_map_data) {
             List<File> loadedFiles = new ArrayList<>();
@@ -305,32 +299,6 @@ public class MainActivity extends BaseActivity {
         String label = u.getPref(Prefs.RECEIVER_LABEL).trim();
         if (!label.isEmpty()) title += " \u2014 " + label;
         setTitle(title);
-    }
-
-    void forward() {
-        u.promptForString(
-            "Forward all points to another receiver",
-            "Other receiver's mobile number:",
-            mLastForwardingDestinationNumber,
-            new Utils.StringCallback() {
-                public void run(String number) {
-                    if (number == null) return;
-                    mLastForwardingDestinationNumber = number;
-                    AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
-                    try {
-                        db.getMobileNumberDao().put(MobileNumberEntity.update(
-                            db.getMobileNumberDao().get(number),
-                            number, "target", null, TargetEntity.PENDING_ID));
-                    } finally {
-                        db.close();
-                    }
-                    u.sendSms(0, number, Utils.format(
-                        "fleet source %s %s",
-                        u.getPref(Prefs.RECEIVER_ID),
-                        u.getPref(Prefs.RECEIVER_LABEL)));
-                }
-            }
-        );
     }
 
     MapDataStore reloadMapData(List<File> loadedFiles) {
@@ -507,7 +475,7 @@ public class MainActivity extends BaseActivity {
                 u.setText(R.id.reported_count, "" + db.getReporterDao().getAllReportedSince(oneHourAgo).size());
             } else {
                 u.showFrameChild(R.id.reporter_details);
-                ReporterEntity r = db.getReporterDao().get(mSelectedReporterId);
+                ReporterEntity r = db.getReporterDao().getActive(mSelectedReporterId);
                 PointEntity p = db.getPointDao().getLatestPointForReporter(mSelectedReporterId);
                 u.setText(R.id.label, r.label);
 
@@ -1073,7 +1041,7 @@ public class MainActivity extends BaseActivity {
                 updateReporterFrame();
                 AppDatabase db = AppDatabase.getDatabase(MainActivity.this);
                 try {
-                    ReporterEntity reporter = db.getReporterDao().get(reporterId);
+                    ReporterEntity reporter = db.getReporterDao().getActive(reporterId);
                     if (reporter != null) {
                         String message = Utils.format("%s reported no GPS signal %s",
                             reporter.label, Utils.describeTime(timeMillis));
@@ -1082,35 +1050,6 @@ public class MainActivity extends BaseActivity {
                 } finally {
                     db.close();
                 }
-            }
-        }
-    }
-
-    class TargetActivatedReceiver extends BroadcastReceiver {
-        @Override public void onReceive(Context context, Intent intent) {
-            String targetId = intent.getStringExtra(SmsReceiver.EXTRA_TARGET_ID);
-            AppDatabase db = AppDatabase.getDatabase(context);
-            try {
-                TargetEntity target = db.getTargetDao().get(targetId);
-                String number = db.getReceiverNumber(targetId);
-                if (target != null) {
-                    u.showMessageBox(
-                        "Forwarding registration accepted",
-                        Utils.format(
-                            "%s (%s) will now receive all the points on your map.",
-                            target.label, number
-                        )
-                    );
-                    for (ReporterEntity.WithPoint rp : db.getReporterDao().getAllActiveWithLatestPoints()) {
-                        String numbers = Utils.join(",", db.getReporterNumbers(rp.reporter.reporterId));
-                        u.sendSms(0, number, Utils.format(
-                            "fleet reporter %s %s %s", rp.reporter.reporterId, numbers, rp.reporter.label));
-                        u.sendSms(0, number, Utils.format(
-                            "fleet point %s %s", rp.reporter.reporterId, rp.point.format()));
-                    }
-                }
-            } finally {
-                db.close();
             }
         }
     }

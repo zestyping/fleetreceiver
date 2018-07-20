@@ -11,15 +11,18 @@ import static android.arch.persistence.room.OnConflictStrategy.REPLACE;
 
 @Dao
 public interface SourceDao {
+    @Query("select * from sources where source_id = :sourceId")
+    SourceEntity get(String sourceId);
+
+    @Query("select * from sources where source_id = :sourceId and activation_millis is not null")
+    SourceEntity getActive(String sourceId);
+
     @Query("select * from sources")
     List<SourceEntity> getAll();
 
     @Query("select * from sources where activation_millis is not null " +
         "order by activation_millis desc")
     List<SourceEntity> getAllActive();
-
-    @Query("select * from sources where source_id = :sourceId")
-    SourceEntity get(String sourceId);
 
     @Insert(onConflict = REPLACE)
     void put(SourceEntity source);

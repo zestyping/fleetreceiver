@@ -30,6 +30,8 @@ public class SmsReceiver extends BroadcastReceiver {
     static final Pattern PATTERN_REPORTER = Pattern.compile("^fleet reporter (\\w+) (\\S+) *(.*)");
     static final String ACTION_REPORTER_ACTIVATED = "FLEET_RECEIVER_REPORTER_ACTIVATED";
 
+    static final String ACTION_FORWARDING_ESTABLISHED = "FLEET_RECEIVER_FORWARDING_ESTABLISHED";
+
     static final Pattern PATTERN_POINT = Pattern.compile("^fleet point (\\w+) *(.*)");
 
     @Override public void onReceive(Context context, Intent intent) {
@@ -46,10 +48,17 @@ public class SmsReceiver extends BroadcastReceiver {
 
         AppDatabase db = AppDatabase.getDatabase(context);
         try {
+            Matcher matcher = PATTERN_ACTIVATE.matcher(body);
+            if (matcher.matches()) {
+                abortBroadcast();
+                activateReporter(context, db, sender, matcher.group(1));
+                return;
+            }
+
             MobileNumberEntity mobileNumber = db.getMobileNumberDao().get(sender);
-            ReporterEntity reporter = db.getReporterDao().get(mobileNumber != null ? mobileNumber.reporterId : null);
+            ReporterEntity reporter = db.getReporterDao().getActive(mobileNumber != null ? mobileNumber.reporterId : null);
             if (reporter != null) {
-                Matcher matcher = PATTERN_GPS_OUTAGE.matcher(body);
+                matcher = PATTERN_GPS_OUTAGE.matcher(body);
                 if (matcher.find()) {
                     Log.i(TAG, "GPS outage message received for " + reporter.label);
                     Long timeMillis = Utils.parseTimestamp(matcher.group(1).trim());
@@ -58,13 +67,6 @@ public class SmsReceiver extends BroadcastReceiver {
                             .putExtra(EXTRA_REPORTER_ID, reporter.reporterId)
                             .putExtra(EXTRA_TIME_MILLIS, timeMillis));
                     }
-                    return;
-                }
-
-                matcher = PATTERN_ACTIVATE.matcher(body);
-                if (matcher.matches()) {
-                    abortBroadcast();
-                    activateReporter(context, db, sender, matcher.group(1));
                     return;
                 }
 
@@ -80,15 +82,14 @@ public class SmsReceiver extends BroadcastReceiver {
                     context.sendBroadcast(new Intent(ACTION_POINTS_ADDED));
                     for (PointEntity point : points) {
                         MainActivity.postLogMessage(context, reporter.label + ": " + point);
-                        forwardToActiveTargets(context, db, Utils.format(
-                            "fleet point %s %s", point.reporterId, point.format()));
+                        forwardPointToTargets(context, db, point);
                     }
                 }
             }
 
             String receiverId = mobileNumber != null ? mobileNumber.receiverId : null;
             if (receiverId != null) {
-                Matcher matcher = PATTERN_TARGET.matcher(body);
+                matcher = PATTERN_TARGET.matcher(body);
                 if (matcher.matches()) {
                     activateTarget(context, db, mobileNumber, matcher.group(1), matcher.group(2));
                 }
@@ -114,17 +115,17 @@ public class SmsReceiver extends BroadcastReceiver {
         db.getReporterDao().put(reporter);
     }
 
-    private void forwardToActiveTargets(Context context, AppDatabase db, String message) {
-        forwardToActiveTargets(context, db, message, null);
-    }
-
-    private void forwardToActiveTargets(Context context, AppDatabase db, String message, String sourceId) {
+    private void forwardPointToTargets(Context context, AppDatabase db, PointEntity point) {
         Utils u = new Utils(context);
-        for (TargetEntity target : db.getTargetDao().getAllActive()) {
-            String number = db.getReceiverNumber(target.targetId);
-            if (number != null && !target.targetId.equals(sourceId)) {
-                Log.i(TAG, "Forwarding to target: " + target);
-                u.sendSms(0, number, message);
+        String message = Utils.format("fleet point %s %s", point.reporterId, point.format());
+        for (ReporterTargetEntity rt : db.getReporterTargetDao().getAllByReporter(point.reporterId)) {
+            TargetEntity target = db.getTargetDao().getActive(rt.targetId);
+            if (target != null) {
+                String number = db.getReceiverNumber(target.targetId);
+                if (number != null && !target.targetId.equals(point.sourceId)) {
+                    Log.i(TAG, "Forwarding to target: " + target);
+                    u.sendSms(0, number, message);
+                }
             }
         }
     }
@@ -136,9 +137,36 @@ public class SmsReceiver extends BroadcastReceiver {
         db.getMobileNumberDao().put(mobileNumber);
         context.sendBroadcast(new Intent(ACTION_TARGET_ACTIVATED)
             .putExtra(EXTRA_TARGET_ID, targetId));
+        for (ReporterTargetEntity rt : db.getReporterTargetDao().getAllByTarget(TargetEntity.PENDING_ID)) {
+            establishForwarding(context, db, rt.reporterId, targetId);
+        }
+        db.getReporterTargetDao().deleteAll(db.getReporterTargetDao().getAllByTarget(TargetEntity.PENDING_ID));
+    }
+
+    public static void establishForwarding(Context context, AppDatabase db, String reporterId, String targetId) {
+        Utils u = new Utils(context);
+        ReporterEntity reporter = db.getReporterDao().getActive(reporterId);
+        TargetEntity target = db.getTargetDao().getActive(targetId);
+        String targetNumber = db.getReceiverNumber(targetId);
+        if (reporter == null || target == null || targetNumber == null) return;
+        db.getReporterTargetDao().put(new ReporterTargetEntity(reporterId, targetId));
+
+        String numbers = Utils.join(",", db.getReporterNumbers(reporterId));
+        u.sendSms(0, targetNumber, Utils.format(
+            "fleet reporter %s %s %s", reporterId, numbers, reporter.label));
+        PointEntity point = db.getPointDao().getLatestPointForReporter(reporterId);
+        if (point != null) {
+            u.sendSms(0, targetNumber, Utils.format(
+                "fleet point %s %s", reporterId, point.format()));
+        }
+        context.sendBroadcast(new Intent(ACTION_FORWARDING_ESTABLISHED)
+            .putExtra(EXTRA_REPORTER_ID, reporterId)
+            .putExtra(EXTRA_TARGET_ID, targetId));
+        u.showToast(Utils.format("Now forwarding %s to %s.", reporter.label, target.label));
     }
 
     private void activateReporter(Context context, AppDatabase db, String number, String reporterId) {
+        Utils u = new Utils(context);
         ReporterEntity reporter = db.getReporterDao().get(reporterId);
         if (reporter != null) {
             db.deactivateReporterByNumber(number);
@@ -148,17 +176,18 @@ public class SmsReceiver extends BroadcastReceiver {
                 db.getMobileNumberDao().get(number),
                 number, reporter.label, reporterId, null
             ));
-            context.sendBroadcast(new Intent(SmsReceiver.ACTION_REPORTER_ACTIVATED));
+            context.sendBroadcast(new Intent(ACTION_REPORTER_ACTIVATED)
+                .putExtra(EXTRA_REPORTER_ID, reporterId));
             String numbers = Utils.join(",", db.getReporterNumbers(reporterId));
-            forwardToActiveTargets(context, db, Utils.format(
-                "fleet reporter %s %s %s", reporterId, numbers, reporter.label));
+            u.showToast(Utils.format("%s is now a registered reporter.", reporter.label));
         }
     }
 
     private void receiveReporter(Context context, AppDatabase db, MobileNumberEntity mobileNumber, String reporterId, String reporterNumbers, String label) {
+        Utils u = new Utils(context);
         String sourceId = mobileNumber.receiverId;
-        SourceEntity source = db.getSourceDao().get(sourceId);
-        if (source == null || source.activationMillis == null) return;
+        SourceEntity source = db.getSourceDao().getActive(sourceId);
+        if (source == null) return;
         for (MobileNumberEntity number : db.getMobileNumberDao().getAllByReporterId(reporterId)) {
             number.reporterId = null;
             db.getMobileNumberDao().put(number);
@@ -171,26 +200,32 @@ public class SmsReceiver extends BroadcastReceiver {
         }
         db.getReporterDao().put(new ReporterEntity(
             reporterId, sourceId, label, Utils.getTime()));
-        context.sendBroadcast(new Intent(ACTION_REPORTER_ACTIVATED));
+        context.sendBroadcast(new Intent(ACTION_REPORTER_ACTIVATED)
+            .putExtra(EXTRA_REPORTER_ID, reporterId));
+        u.showToast(Utils.format("%s is now forwarding %s to you.", source.label, label));
     }
 
     private void receivePoint(Context context, AppDatabase db, MobileNumberEntity mobileNumber, String reporterId, String formattedPoint) {
         String sourceId = mobileNumber.receiverId;
-        SourceEntity source = db.getSourceDao().get(sourceId);
-        if (source == null || source.activationMillis == null) return;
+        SourceEntity source = db.getSourceDao().getActive(sourceId);
+        if (source == null) return;
 
         PointEntity point = PointEntity.parse(reporterId, sourceId, formattedPoint);
         if (point != null) {
             Log.i(TAG, "Received forwarded point from " + source.label + ": " + point);
+
+            // Don't forward a duplicate point.
+            PointEntity existing = db.getPointDao().getByReporterAndTime(reporterId, point.timeMillis);
+            if (existing != null && existing.format().equals(point.format())) return;
+
             db.getPointDao().insertAll(point);
-            ReporterEntity reporter = db.getReporterDao().get(reporterId);
+            ReporterEntity reporter = db.getReporterDao().getActive(reporterId);
             if (reporter != null) {
                 updateLatestPoint(db, reporter);
                 MainActivity.postLogMessage(context, reporter.label + ": " + point);
             }
             context.sendBroadcast(new Intent(ACTION_POINTS_ADDED));
-            forwardToActiveTargets(context, db, Utils.format(
-                "fleet point %s %s", point.reporterId, point.format()), sourceId);
+            forwardPointToTargets(context, db, point);
         }
     }
 }

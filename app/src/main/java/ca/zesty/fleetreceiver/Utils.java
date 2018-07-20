@@ -32,6 +32,7 @@ import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.crashlytics.android.Crashlytics;
 
@@ -637,12 +638,17 @@ public class Utils {
         child.setVisibility(View.VISIBLE);
     }
 
-    /** Shows a message box with a single button that invokes the given listener. */
-    public AlertDialog showMessageBox(String title, String message, String buttonLabel, final Callback callback) {
+    public void showToast(String message) {
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show();
+    }
+
+    /** Shows a message box with a cancel button and a button that invokes the given listener. */
+    public AlertDialog showConfirmBox(String title, String message, String buttonLabel, final Callback callback) {
         return new AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton(buttonLabel, callback == null ? null : new DialogInterface.OnClickListener() {
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(buttonLabel, new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface dialog, int which) {
                     callback.run();
                 }
@@ -650,9 +656,13 @@ public class Utils {
             .show();
     }
 
-    /** Shows a simple message box with an OK button. */
-    public void showMessageBox(String title, String message) {
-        showMessageBox(title, message, "OK", null);
+    /** Shows a message box with a single OK button. */
+    public AlertDialog showMessageBox(String title, String message) {
+        return new AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show();
     }
 
     /** Shows a simple prompt dialog with a single text entry field. */

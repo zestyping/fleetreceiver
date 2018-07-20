@@ -13,6 +13,9 @@ public interface ReporterDao {
     @Query("select * from reporters where reporter_id = :reporterId")
     ReporterEntity get(String reporterId);
 
+    @Query("select * from reporters where reporter_id = :reporterId and activation_millis is not null")
+    ReporterEntity getActive(String reporterId);
+
     @Query("select * from reporters order by activation_millis desc")
     List<ReporterEntity> getAll();
 

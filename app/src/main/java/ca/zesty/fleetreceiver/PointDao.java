@@ -8,6 +8,9 @@ import java.util.List;
 
 @Dao
 public interface PointDao {
+    @Query("select * from points where parent_reporter_id = :reporterId and time_millis = :timeMillis")
+    PointEntity getByReporterAndTime(String reporterId, long timeMillis);
+
     @Query("select * from points where parent_reporter_id = :reporterId")
     List<PointEntity> getAllForReporter(String reporterId);
 

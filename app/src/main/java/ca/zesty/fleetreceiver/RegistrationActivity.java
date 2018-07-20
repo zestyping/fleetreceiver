@@ -1,7 +1,9 @@
 package ca.zesty.fleetreceiver;
 
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
@@ -14,6 +16,8 @@ import android.view.View;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -82,7 +86,7 @@ public class RegistrationActivity extends BaseActivity {
         } else for (ReporterEntity reporter : reporters) {
             String label = reporter.label;
             if (reporter.sourceId != null) {
-                SourceEntity source = mDb.getSourceDao().get(reporter.sourceId);
+                SourceEntity source = mDb.getSourceDao().getActive(reporter.sourceId);
                 if (source != null) {
                     label += " " + ("(via " + source.label + ")").replace(" ", "\u00a0");
                 }
@@ -90,7 +94,7 @@ public class RegistrationActivity extends BaseActivity {
             table.addView(createRow(
                 inflater, reporter.activationMillis, label,
                 Utils.join("\n", mDb.getReporterNumbers(reporter.reporterId)),
-                createReporterDeleter(reporter.reporterId)
+                createReporterDetailsListener(reporter.reporterId)
             ));
         }
 
@@ -103,7 +107,7 @@ public class RegistrationActivity extends BaseActivity {
             table.addView(createRow(
                 inflater, source.activationMillis, source.label,
                 Utils.join("\n", mDb.getReceiverNumbers(source.sourceId)),
-                createSourceDeleter(source.sourceId)
+                createSourceDetailsListener(source.sourceId)
             ));
         }
 
@@ -116,7 +120,7 @@ public class RegistrationActivity extends BaseActivity {
             table.addView(createRow(
                 inflater, target.activationMillis, target.label,
                 Utils.join("\n", mDb.getReceiverNumbers(target.targetId)),
-                createTargetDeleter(target.targetId)
+                createTargetDetailsListener(target.targetId)
             ));
         }
     }
@@ -124,7 +128,7 @@ public class RegistrationActivity extends BaseActivity {
     TableRow createNoneRegisteredRow(LayoutInflater inflater) {
         TableRow row = (TableRow) inflater.inflate(R.layout.reporter_row, null);
         u.setText(row, R.id.registration_label, "(none registered yet)");
-        row.findViewById(R.id.delete).setVisibility(View.GONE);
+        row.findViewById(R.id.details).setVisibility(View.GONE);
         return row;
     }
 
@@ -136,25 +140,53 @@ public class RegistrationActivity extends BaseActivity {
             u.setText(row, R.id.registration_label, label);
         }
         u.setText(row, R.id.registration_number, number);
-        row.findViewById(R.id.delete).setOnClickListener(listener);
+        row.findViewById(R.id.details).setOnClickListener(listener);
         return row;
     }
 
-    View.OnClickListener createReporterDeleter(final String reporterId) {
+    View.OnClickListener createReporterDetailsListener(final String reporterId) {
         return new View.OnClickListener() {
             @Override public void onClick(View v) {
-                final ReporterEntity reporter = mDb.getReporterDao().get(reporterId);
+                ReporterEntity reporter = mDb.getReporterDao().getActive(reporterId);
+                if (reporter == null) return;
+                String message = reporter.sourceId != null ?
+                    Utils.format("Forwarded from %s.", mDb.getSourceDao().get(reporter.sourceId).label) :
+                    Utils.format("Received directly from %s.", reporter.label);
+                List<String> targetLabels = new ArrayList<>();
+                for (ReporterTargetEntity rt : mDb.getReporterTargetDao().getAllByReporter(reporterId)) {
+                    TargetEntity target = mDb.getTargetDao().getActive(rt.targetId);
+                    if (target != null) targetLabels.add(target.label);
+                }
+                if (!targetLabels.isEmpty()) {
+                    message += Utils.format("\n\nForwarding to %s.", Utils.join(", ", targetLabels));
+                }
+                new AlertDialog.Builder(RegistrationActivity.this)
+                    .setTitle("Reporter: " + reporter.label)
+                    .setMessage(message)
+                    .setNeutralButton("Delete", createReporterDeleter(reporterId))
+                    .setNegativeButton("Forward", createReporterForwarder(reporterId))
+                    .setPositiveButton("Close", null)
+                    .show();
+            }
+        };
+    }
+
+    AlertDialog.OnClickListener createReporterDeleter(final String reporterId) {
+        return new AlertDialog.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                final ReporterEntity reporter = mDb.getReporterDao().getActive(reporterId);
                 if (reporter == null) return;
                 String message = Utils.format(
                     "This will delete %s from the map and stop accepting " +
                     "reports from %s.  Are you sure?", reporter.label,
                     Utils.join(", ", mDb.getReporterNumbers(reporterId)));
-                u.showMessageBox(
+                u.showConfirmBox(
                     Utils.format("Delete reporter %s", reporter.label), message, "Delete",
                     new Utils.Callback() {
                         @Override public void run() {
                             reporter.activationMillis = null;
                             mDb.getReporterDao().put(reporter);
+                            mDb.getReporterTargetDao().deleteAll(mDb.getReporterTargetDao().getAllByReporter(reporterId));
                             updateRegistrationTable();
                         }
                     }
@@ -163,16 +195,83 @@ public class RegistrationActivity extends BaseActivity {
         };
     }
 
-    View.OnClickListener createSourceDeleter(final String sourceId) {
+    String mLastForwardingDestinationNumber = "+236";
+
+    AlertDialog.OnClickListener createReporterForwarder(final String reporterId) {
+        return new AlertDialog.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                final ReporterEntity reporter = mDb.getReporterDao().getActive(reporterId);
+                if (reporter == null) return;
+                u.promptForString(
+                    "Forward this reporter's points to another receiver",
+                    "Other receiver's mobile number:",
+                    mLastForwardingDestinationNumber,
+                    new Utils.StringCallback() {
+                        public void run(String number) {
+                            if (number == null) return;
+                            mLastForwardingDestinationNumber = number;
+                            MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
+                            TargetEntity target = null;
+                            if (mobileNumber != null && mobileNumber.receiverId != null) {
+                                target = mDb.getTargetDao().getActive(mobileNumber.receiverId);
+                            }
+                            if (target == null) {
+                                mDb.getMobileNumberDao().put(MobileNumberEntity.update(
+                                    mDb.getMobileNumberDao().get(number),
+                                    number, "pending", null, TargetEntity.PENDING_ID));
+                                mDb.getReporterTargetDao().put(
+                                    new ReporterTargetEntity(reporterId, TargetEntity.PENDING_ID));
+                                u.sendSms(0, number, Utils.format(
+                                    "fleet source %s %s",
+                                    u.getPref(Prefs.RECEIVER_ID),
+                                    u.getPref(Prefs.RECEIVER_LABEL)));
+                                u.showToast("Sending your request...");
+                            } else {
+                                SmsReceiver.establishForwarding(
+                                    RegistrationActivity.this, mDb, reporterId, target.targetId);
+                            }
+                        }
+                    }
+                );
+            }
+        };
+    }
+
+    View.OnClickListener createSourceDetailsListener(final String sourceId) {
         return new View.OnClickListener() {
             @Override public void onClick(View v) {
-                final SourceEntity source = mDb.getSourceDao().get(sourceId);
+                SourceEntity source = mDb.getSourceDao().getActive(sourceId);
+                if (source == null) return;
+                List<String> reporterLabels = new ArrayList<>();
+                for (ReporterEntity reporter : mDb.getReporterDao().getAllBySource(sourceId)) {
+                    if (reporter.activationMillis != null) {
+                        reporterLabels.add(reporter.label);
+                    }
+                }
+                Collections.sort(reporterLabels);
+                String message = reporterLabels.isEmpty() ?
+                    Utils.format("Currently not accepting anything from %s.", source.label) :
+                    Utils.format("Accepting reports forwarded from %s for %s.", source.label, Utils.join(", ", reporterLabels));
+                new AlertDialog.Builder(RegistrationActivity.this)
+                    .setTitle("Source: " + source.label)
+                    .setMessage(message)
+                    .setNeutralButton("Delete", createSourceDeleter(sourceId))
+                    .setPositiveButton("Close", null)
+                    .show();
+            }
+        };
+    }
+
+    AlertDialog.OnClickListener createSourceDeleter(final String sourceId) {
+        return new AlertDialog.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                final SourceEntity source = mDb.getSourceDao().getActive(sourceId);
                 if (source == null) return;
                 String message = Utils.format(
                     "This will delete all the reporters that came from %s " +
                     "and stop accepting further reports from %s.  Are you sure?",
                     source.label, Utils.join(", ", mDb.getReceiverNumbers(sourceId)));
-                u.showMessageBox(
+                u.showConfirmBox(
                     Utils.format("Delete source %s", source.label), message, "Delete",
                     new Utils.Callback() {
                         @Override public void run() {
@@ -190,21 +289,44 @@ public class RegistrationActivity extends BaseActivity {
         };
     }
 
-    View.OnClickListener createTargetDeleter(final String targetId) {
+    View.OnClickListener createTargetDetailsListener(final String targetId) {
         return new View.OnClickListener() {
             @Override public void onClick(View v) {
-                final TargetEntity target = mDb.getTargetDao().get(targetId);
+                TargetEntity target = mDb.getTargetDao().getActive(targetId);
+                if (target == null) return;
+                List<String> reporterLabels = new ArrayList<>();
+                for (ReporterTargetEntity rt : mDb.getReporterTargetDao().getAllByTarget(targetId)) {
+                    ReporterEntity reporter = mDb.getReporterDao().getActive(rt.reporterId);
+                    if (reporter != null) reporterLabels.add(reporter.label);
+                }
+                String message = reporterLabels.isEmpty() ?
+                    Utils.format("Currently not forwarding anything to %s.", target.label) :
+                    Utils.format("Currently forwarding %s to %s.", Utils.join(", ", reporterLabels), target.label);
+                new AlertDialog.Builder(RegistrationActivity.this)
+                    .setTitle("Target: " + target.label)
+                    .setMessage(message)
+                    .setNeutralButton("Delete", createTargetDeleter(targetId))
+                    .setPositiveButton("Close", null)
+                    .show();
+            }
+        };
+    }
+    AlertDialog.OnClickListener createTargetDeleter(final String targetId) {
+        return new AlertDialog.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                final TargetEntity target = mDb.getTargetDao().getActive(targetId);
                 if (target == null) return;
                 String message = Utils.format(
                     "This will stop all forwarding of points and reporters " +
                     "to %s at %s.  Are you sure?", target.label,
                     Utils.join(", ", mDb.getReceiverNumbers(targetId)));
-                u.showMessageBox(
+                u.showConfirmBox(
                     Utils.format("Delete target %s", target.label), message, "Delete",
                     new Utils.Callback() {
                         @Override public void run() {
                             target.activationMillis = null;
                             mDb.getTargetDao().put(target);
+                            mDb.getReporterTargetDao().deleteAll(mDb.getReporterTargetDao().getAllByTarget(targetId));
                             updateRegistrationTable();
                         }
                     }
@@ -243,11 +365,11 @@ public class RegistrationActivity extends BaseActivity {
             String label = "";
             MobileNumberEntity mobileNumber = mDb.getMobileNumberDao().get(number);
             if (mobileNumber != null) {
-                ReporterEntity reporter = mDb.getReporterDao().get(mobileNumber.reporterId);
+                ReporterEntity reporter = mDb.getReporterDao().getActive(mobileNumber.reporterId);
                 if (reporter != null) label = reporter.label;
             }
             u.promptForString(
-                "Register a Reporter",
+                "Register a reporter",
                 "Enter the label for " + number + ":",
                 label,
                 new Utils.StringCallback() {
@@ -262,6 +384,7 @@ public class RegistrationActivity extends BaseActivity {
                             number, label, reporterId, null
                         ));
                         u.sendSms(0, number, "fleet assign " + reporterId + " " + label);
+                        u.showToast("Sending your label to this reporter...");
                     }
                 },
                 new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
@@ -274,7 +397,7 @@ public class RegistrationActivity extends BaseActivity {
                 "Forwarding request from " + mobileNumber,
                 Utils.format(
                     "%s (%s) is requesting to send some points to your map. " +
-                        "If you agree, enter a name for this sender and tap OK.",
+                    "If you agree, enter a name for this sender and tap OK.",
                     mobileNumber, label),
                 label,
                 new Utils.StringCallback() {
@@ -301,6 +424,7 @@ public class RegistrationActivity extends BaseActivity {
                 u.getPref(Prefs.RECEIVER_LABEL)
             ));
             updateRegistrationTable();
+            u.showToast(Utils.format("Accepting forwarding from %s...", label));
         }
     }
 
