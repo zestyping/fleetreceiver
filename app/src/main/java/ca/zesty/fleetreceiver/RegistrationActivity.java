@@ -370,7 +370,7 @@ public class RegistrationActivity extends BaseActivity {
             }
             u.promptForString(
                 "Register a reporter",
-                "Enter the label for " + number + ":",
+                "Enter a name for " + number + ":",
                 label,
                 new Utils.StringCallback() {
                     public void run(String label) {
@@ -384,7 +384,7 @@ public class RegistrationActivity extends BaseActivity {
                             number, label, reporterId, null
                         ));
                         u.sendSms(0, number, "fleet assign " + reporterId + " " + label);
-                        u.showToast("Sending your label to this reporter...");
+                        u.showToast(Utils.format("Naming this reporter %s...", label));
                     }
                 },
                 new InputFilter.LengthFilter(MAX_LABEL_LENGTH),
@@ -394,7 +394,7 @@ public class RegistrationActivity extends BaseActivity {
 
         private void handleSourceRequest(final String mobileNumber, final String sourceId, String label) {
             u.promptForString(
-                "Forwarding request from " + mobileNumber,
+                "Forwarding request",
                 Utils.format(
                     "%s (%s) is requesting to send some points to your map. " +
                     "If you agree, enter a name for this sender and tap OK.",
