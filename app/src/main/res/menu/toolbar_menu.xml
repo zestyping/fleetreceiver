@@ -11,18 +11,13 @@
       app:showAsAction="never"/>
 
   <item
-      android:id="@+id/action_forward"
-      android:title="Forward..."
-      app:showAsAction="never"/>
-
-  <item
       android:id="@+id/action_request_location_now"
       android:title="Request location now"
       app:showAsAction="never"/>
 
   <item
-      android:id="@+id/action_load_map_data"
-      android:title="Load map data"
+      android:id="@+id/action_load_base_maps"
+      android:title="Load base maps"
       app:showAsAction="never"/>
 
   <item

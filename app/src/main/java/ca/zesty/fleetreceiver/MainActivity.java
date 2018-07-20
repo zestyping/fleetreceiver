@@ -215,16 +215,16 @@ public class MainActivity extends BaseActivity {
                 db.close();
             }
         }
-        if (item.getItemId() == R.id.action_load_map_data) {
+        if (item.getItemId() == R.id.action_load_base_maps) {
             List<File> loadedFiles = new ArrayList<>();
             reloadMapData(loadedFiles);
-            String message = "Loaded map data from:\n";
+            String message = "Loaded base map data from:\n\n";
             for (File file : loadedFiles) {
-                message += "    \u2022 " + file.getName() + "\n";
+                message += "  \u2022 " + file.getName() + "\n";
             }
-            message += "\nTo add more map data, download any MapsForge file with a " +
+            message += "\nTo add more base maps, download any MapsForge file with a " +
                 "filename ending in \".map\" and leave it in your Download folder.";
-            u.showMessageBox("Load map data", message);
+            u.showMessageBox("Load base maps", message);
         }
         if (item.getItemId() == R.id.action_export_database) {
             if (exportDatabase()) {
@@ -746,6 +746,8 @@ public class MainActivity extends BaseActivity {
         final int TEXT_HEIGHT = dpToPixels(12) * 3/4;
         final int LINE_HEIGHT = TEXT_HEIGHT * 14/10;
         final int PADDING = dpToPixels(4);
+        final int MIN_ARROW_LENGTH = dpToPixels(24);
+        final int MIN_ARROW_SPEED_KMH = 5;
         final int LABEL_OFFSET = FRAME_RADIUS + PADDING + TEXT_HEIGHT;
         final int MIN_LABEL_POINT_DISTANCE = dpToPixels(30);
         final int MERGE_LABEL_POINT_PIXELS = dpToPixels(12);
@@ -810,9 +812,10 @@ public class MainActivity extends BaseActivity {
                 if (canvasEnvelope.contains(pt)) {
                     LatLong reckonPos = deadReckon(point, arrowSeconds);
                     Point arrowHead = toPixels(reckonPos, mapSize, topLeftPt);
-
-                    drawArrowOutline(canvas, pt, arrowHead, ARROW_TIP_SIZE, arrowOutlinePaint, 2);
-                    drawArrow(canvas, pt, arrowHead, ARROW_TIP_SIZE, arrowPaint);
+                    if (pt.distance(arrowHead) >= MIN_ARROW_LENGTH && point.speedKmh >= MIN_ARROW_SPEED_KMH) {
+                        drawArrowOutline(canvas, pt, arrowHead, ARROW_TIP_SIZE, arrowOutlinePaint, 2);
+                        drawArrow(canvas, pt, arrowHead, ARROW_TIP_SIZE, arrowPaint);
+                    }
                     int x = (int) pt.x, y = (int) pt.y;
                     canvas.drawText(label, x, y + LABEL_OFFSET, softOutlinePaint);
                     canvas.drawCircle(x, y, DOT_RADIUS, dotPaint);
@@ -932,30 +935,32 @@ public class MainActivity extends BaseActivity {
                 canvas.drawPath(path, frameShadowPaint);
 
                 // Draw the velocity arrow.
-                drawArrowOutline(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, selectedArrowOutlinePaint, 2);
-                if (drawArrow(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, arrowPaint)) {
-                    String arrowLabel = "+" + Utils.describePeriod(arrowSeconds * 1000, true);
-                    // Place above or below the arrowhead.
-                    int ax = (int) arrowHead.x;
-                    int ay = (int) arrowHead.y + (arrowHead.y > selectedPt.y ? 1 : -1) * (TEXT_HEIGHT/2 + PADDING) + TEXT_HEIGHT/2;
-                    if (Math.abs(arrowHead.x - selectedPt.x) > Math.abs(arrowHead.y - selectedPt.y)) {
-                        // Place left or right of the arrowhead.
-                        int sx = arrowHead.x > selectedPt.x ? 1 : -1;
-                        ax = (int) (arrowHead.x + sx * (PADDING + measureText(arrowTextPaint, arrowLabel) / 2));
-                        ay = (int) (arrowHead.y + TEXT_HEIGHT/2);
-                    }
-
-                    // Prevent collision with the marker label.
-                    double textWidth = measureText(textPaint, label) + measureText(arrowTextPaint, arrowLabel);
-                    if (ay > cy + FRAME_RADIUS && Math.abs(ax - cx) < textWidth/2 + PADDING) {
-                        if (ay > cy + LABEL_OFFSET) {  // nudge down
-                            ay = Math.max(ay, cy + LABEL_OFFSET + PADDING + TEXT_HEIGHT);
-                        } else {  // nudge up
-                            ay = Math.min(ay, cy + LABEL_OFFSET - PADDING - TEXT_HEIGHT);
+                if (selectedPt.distance(arrowHead) >= MIN_ARROW_LENGTH && selectedPoint.speedKmh >= MIN_ARROW_SPEED_KMH) {
+                    drawArrowOutline(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, selectedArrowOutlinePaint, 2);
+                    if (drawArrow(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, arrowPaint)) {
+                        String arrowLabel = "+" + Utils.describePeriod(arrowSeconds*1000, true);
+                        // Place above or below the arrowhead.
+                        int ax = (int) arrowHead.x;
+                        int ay = (int) arrowHead.y + (arrowHead.y > selectedPt.y ? 1 : -1)*(TEXT_HEIGHT/2 + PADDING) + TEXT_HEIGHT/2;
+                        if (Math.abs(arrowHead.x - selectedPt.x) > Math.abs(arrowHead.y - selectedPt.y)) {
+                            // Place left or right of the arrowhead.
+                            int sx = arrowHead.x > selectedPt.x ? 1 : -1;
+                            ax = (int) (arrowHead.x + sx*(PADDING + measureText(arrowTextPaint, arrowLabel)/2));
+                            ay = (int) (arrowHead.y + TEXT_HEIGHT/2);
                         }
+
+                        // Prevent collision with the marker label.
+                        double textWidth = measureText(textPaint, label) + measureText(arrowTextPaint, arrowLabel);
+                        if (ay > cy + FRAME_RADIUS && Math.abs(ax - cx) < textWidth/2 + PADDING) {
+                            if (ay > cy + LABEL_OFFSET) {  // nudge down
+                                ay = Math.max(ay, cy + LABEL_OFFSET + PADDING + TEXT_HEIGHT);
+                            } else {  // nudge up
+                                ay = Math.min(ay, cy + LABEL_OFFSET - PADDING - TEXT_HEIGHT);
+                            }
+                        }
+                        canvas.drawText(arrowLabel, ax, ay, hardOutlinePaint);
+                        canvas.drawText(arrowLabel, ax, ay, arrowTextPaint);
                     }
-                    canvas.drawText(arrowLabel, ax, ay, hardOutlinePaint);
-                    canvas.drawText(arrowLabel, ax, ay, arrowTextPaint);
                 }
 
                 // Draw the dot.
