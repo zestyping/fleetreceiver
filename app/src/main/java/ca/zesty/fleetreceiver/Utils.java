@@ -172,6 +172,7 @@ public class Utils {
         Matcher matcher = PATTERN_TIMESTAMP.matcher(timestamp);
         if (!matcher.matches()) return null;
         Calendar calendar = Calendar.getInstance(UTC);
+        calendar.clear();
         calendar.set(
             Integer.parseInt(matcher.group(1)),
             Integer.parseInt(matcher.group(2)) - 1, // Java is insane (0 = Jan, 11 = Dec)
