@@ -26,12 +26,17 @@
       app:showAsAction="never"/>
 
   <item
-      android:id="@+id/action_settings"
-      android:title="Settings..."
+      android:id="@+id/action_send_diagnostics"
+      android:title="@string/send_diagnostics"
       app:showAsAction="never"/>
 
   <item
       android:id="@+id/action_update"
       android:title="Update app..."
+      app:showAsAction="never"/>
+
+  <item
+      android:id="@+id/action_settings"
+      android:title="Settings..."
       app:showAsAction="never"/>
 </menu>
