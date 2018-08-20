@@ -23,6 +23,6 @@ public class TargetEntity {
     public String toString() {
         return Utils.format("<Target %s: %s, %s>",
             targetId, label, activationMillis == null ? "inactive" :
-                "activated " + Utils.describeTime(activationMillis));
+                "activated " + Utils.formatUtcTimeMillis(activationMillis));
     }
 }

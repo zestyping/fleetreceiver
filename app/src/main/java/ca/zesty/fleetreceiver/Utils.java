@@ -56,6 +56,8 @@ import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.fabric.sdk.android.Fabric;
+
 public class Utils {
     static final String TAG = "Utils";
     static final TimeZone UTC = TimeZone.getTimeZone("UTC");
@@ -73,6 +75,7 @@ public class Utils {
 
     static int sNumLogRemoteLines = 0;
     static long sTimeOffsetMillis = 0;  // compensate for an inaccurate system clock
+    static boolean sCrashlyticsAvailable = false;
 
     public static void setTimeOffset(long offsetMillis) {
         sTimeOffsetMillis = offsetMillis;
@@ -89,6 +92,10 @@ public class Utils {
 
     public static String escapeString(String str) {
         return str.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n");
+    }
+
+    public static String quoteString(String str) {
+        return "\"" + escapeString(str).replace("\"", "\\\"") + "\"";
     }
 
     public static String plural(long count, String singular, String plural) {
@@ -185,28 +192,26 @@ public class Utils {
     }
 
     /** Describes a time period using a short phrase like "23 min". */
-    public static String describePeriod(long elapsedMillis) {
+    public String describePeriod(long elapsedMillis) {
         return describePeriod(elapsedMillis, false);
     }
 
     /** Describes a time period using a short phrase like "23 min". */
-    public static String describePeriod(long elapsedMillis, boolean showSeconds) {
+    public String describePeriod(long elapsedMillis, boolean showSeconds) {
         long elapsedSec = elapsedMillis/1000;
-        if (elapsedSec < 60 && showSeconds) return format("%d sec", elapsedSec);
-        if (elapsedSec < 3600) return format("%d min", elapsedSec/60);
-        if (elapsedSec < 36000)
-            return format("%.1f h", (float) elapsedSec/3600);
-        if (elapsedSec < 24*3600) return format("%d h", elapsedSec/3600);
-        if (elapsedSec < 7*24*3600)
-            return format("%.1f d", (float) elapsedSec/24/3600);
-        return format("%d d", elapsedSec/24/3600);
+        if (elapsedSec < 60 && showSeconds) return str(R.string.fmt_period_n_sec, elapsedSec);
+        if (elapsedSec < 3600) return str(R.string.fmt_period_n_min, elapsedSec/60);
+        if (elapsedSec < 36000) return str(R.string.fmt_period_f_h, (float) elapsedSec/3600);
+        if (elapsedSec < 24*3600) return str(R.string.fmt_period_n_h, elapsedSec/3600);
+        if (elapsedSec < 7*24*3600) return str(R.string.fmt_period_f_d, (float) elapsedSec/24/3600);
+        return str(R.string.fmt_period_n_d, elapsedSec/24/3600);
     }
 
     /** Describes a time in the past using a short phrase like "15 h ago". */
-    public static String describeTime(long timeMillis) {
+    public String describeTime(long timeMillis) {
         long elapsedMillis = Utils.getTime() - timeMillis;
-        if (elapsedMillis < 60000) return "just now";
-        else return describePeriod(elapsedMillis) + " ago";
+        if (elapsedMillis < 60000) return str(R.string.time_just_now);
+        else return str(R.string.fmt_time_dur_ago, describePeriod(elapsedMillis));
     }
 
     /** Describes a distance using a phrase like "150 m" or "7.3 km". */
@@ -230,6 +235,15 @@ public class Utils {
     public static int getLocalMinutesSinceMidnight() {
         Calendar localTime = Calendar.getInstance();
         return localTime.get(Calendar.HOUR_OF_DAY) * 60 + localTime.get(Calendar.MINUTE);
+    }
+
+    public static String formatLocalDate() {
+        Calendar today = Calendar.getInstance();
+        return Utils.format("%04d-%02d-%02d",
+            today.get(Calendar.YEAR),
+            today.get(Calendar.MONTH) + 1,  // Java is fucking insane
+            today.get(Calendar.DAY_OF_MONTH)
+        );
     }
 
     public static boolean isLocalTimeOfDayBetween(String startHourMinute, String endHourMinute) {
@@ -353,20 +367,12 @@ public class Utils {
         String logLine = Utils.format("%s - %s: %s", timestamp, tag, message);
         if (remote) {
             Log.i(tag, "(logged to remote) " + message);
-            Crashlytics.log(logLine);
-            if (++sNumLogRemoteLines >= 100) {
-                Utils.transmitLog();
-            }
+            if (sCrashlyticsAvailable) Crashlytics.log(logLine);
+            if (++sNumLogRemoteLines >= 100) Utils.transmitLog();
         } else {
             Log.i(tag, message);
         }
-        String packageName;
-        try {
-            packageName = Crashlytics.getInstance().getContext().getPackageName();
-        } catch (Exception e) {
-            packageName = "ca.zesty";
-        }
-        String filename = Utils.format("%s-%s.txt", packageName, timestamp.substring(0, 10));
+        String filename = Utils.format("%s-%s.txt", BuildConfig.APPLICATION_ID, timestamp.substring(0, 10));
         File directory = getExternalDirectory();
         if (directory == null) return;  // fails during testing due to lack of mocks
         File file = new File(directory, filename);
@@ -383,13 +389,24 @@ public class Utils {
     }
 
     public static void transmitLog() {
-        try {
-            throw new RuntimeException("Diagnostic log");
-        } catch (RuntimeException e) {
-            Crashlytics.logException(e);
-            Log.i(TAG, "Captured Crashlytics diagnostic log (events: " + sNumLogRemoteLines + ")");
-            sNumLogRemoteLines = 0;
+        if (sCrashlyticsAvailable) {
+            try {
+                throw new RuntimeException("Diagnostic log");
+            } catch (RuntimeException e) {
+                Crashlytics.logException(e);
+                Log.i(TAG, "Captured Crashlytics diagnostic log (events: " + sNumLogRemoteLines + ")");
+                sNumLogRemoteLines = 0;
+            }
         }
+    }
+
+    public static void initializeCrashlytics(Context context) {
+        Fabric.with(context, new Crashlytics());
+        sCrashlyticsAvailable = true;
+    }
+
+    public static void setCrashlyticsString(String key, String value) {
+        if (sCrashlyticsAvailable) Crashlytics.setString(key, value);
     }
 
 
@@ -406,6 +423,14 @@ public class Utils {
     public Utils(Activity activity) {
         this.activity = activity;
         this.context = activity;
+    }
+
+    public String str(int id) {
+        return context.getString(id);
+    }
+
+    public String str(int id, Object... args) {
+        return Utils.format(str(id), args);
     }
 
     public AlarmManager getAlarmManager() {
@@ -461,7 +486,11 @@ public class Utils {
 
     /** Sends a text message using the default SmsManager. */
     public void sendSms(int slot, String recipient, String body) {
-        sendSms(slot, recipient, body, null);
+        try {
+            sendSms(slot, recipient, body, null);
+        } catch (IllegalArgumentException e) {
+            log(TAG, "Error sending SMS: " + e);
+        }
     }
 
     /** Sends a text message using the default SmsManager. */
@@ -512,6 +541,27 @@ public class Utils {
         return slots;
     }
 
+    /** Finds the SIM slot with a given IMSI; returns -1 if no such slot. */
+    public int getSlotWithImsi(String imsi) {
+        if (imsi == null) return -1;
+        for (int slot = 0; slot < getNumSimSlots(); slot++) {
+            if (imsi.equals(getImsi(slot))) return slot;
+        }
+        return -1;
+    }
+
+    /** Gets the carrier name for a given SIM slot; returns null if no such slot. */
+    public String getCarrierName(int slot) {
+        if (android.os.Build.VERSION.SDK_INT >= 22) {
+            SubscriptionInfo sub = SubscriptionManager.from(context)
+                .getActiveSubscriptionInfoForSimSlotIndex(slot);
+            if (sub != null) {
+                return String.valueOf(sub.getCarrierName());
+            }
+        }
+        return slot == 0 ? getTelephonyManager().getNetworkOperatorName() : null;
+    }
+
     /** Gets the SmsManager for a given SIM slot; returns null if no such slot. */
     public SmsManager getSmsManager(int slot) {
         if (android.os.Build.VERSION.SDK_INT >= 22) {
@@ -532,11 +582,25 @@ public class Utils {
     }
 
     public String getPref(String key) {
-        return getPrefs().getString(key, "");
+        return getPref(key, "");
     }
 
     public String getPref(String key, String defaultValue) {
         return getPrefs().getString(key, defaultValue);
+    }
+
+    public String getStringPref(String key) {
+        try { return getPref(key); }
+        catch (Exception e) { }
+        try { return "" + getBooleanPref(key); }
+        catch (Exception e) { }
+        try { return "" + getLongPref(key, -1); }
+        catch (Exception e) { }
+        try { return "" + getIntPref(key, -1); }
+        catch (Exception e) { }
+        try { return "" + getFloatPref(key, -1); }
+        catch (Exception e) { }
+        return "";
     }
 
     public boolean getBooleanPref(String key) {
@@ -562,12 +626,30 @@ public class Utils {
         return value;
     }
 
-    public long getMinutePrefInMillis(String key, double defaultMinutes) {
-        double minutes = defaultMinutes;
+    public long getLongPref(String key, long defaultValue) {
+        long value = defaultValue;
         try {
-            minutes = Double.valueOf(getPrefs().getString(key, "x"));
-        } catch (NumberFormatException e) { }
-        return Math.round(minutes * 60 * 1000);
+            return getPrefs().getLong(key, defaultValue);
+        } catch (ClassCastException e) { }
+        try {
+            value = Long.parseLong(getPrefs().getString(key, "x"));
+        } catch (ClassCastException | NumberFormatException e) { }
+        return value;
+    }
+
+    public float getFloatPref(String key, double defaultValue) {
+        float value = (float) defaultValue;
+        try {
+            return getPrefs().getFloat(key, value);
+        } catch (ClassCastException e) { }
+        try {
+            value = Float.parseFloat(getPrefs().getString(key, "x"));
+        } catch (ClassCastException | NumberFormatException e) { }
+        return value;
+    }
+
+    public long getMinutePrefInMillis(String key, double defaultMinutes) {
+        return Math.round(getFloatPref(key, defaultMinutes) * 60 * 1000);
     }
 
     public void setPref(String key, String value) {

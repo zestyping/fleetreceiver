@@ -136,7 +136,7 @@ public class RegistrationActivity extends BaseActivity {
                        String label, String number, View.OnClickListener listener) {
         TableRow row = (TableRow) inflater.inflate(R.layout.reporter_row, null);
         if (label != null) {
-            u.setText(row, R.id.registration_activation_time, Utils.describeTime(activationMillis));
+            u.setText(row, R.id.registration_activation_time, u.describeTime(activationMillis));
             u.setText(row, R.id.registration_label, label);
         }
         u.setText(row, R.id.registration_number, number);

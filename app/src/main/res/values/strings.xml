@@ -1,3 +1,11 @@
 <resources>
   <string name="app_name">Fleet Receiver</string>
+  <string name="fmt_period_n_sec">%d sec</string>
+  <string name="fmt_period_n_min">%d min</string>
+  <string name="fmt_period_f_h">%.1f h</string>
+  <string name="fmt_period_n_h">%d h</string>
+  <string name="fmt_period_f_d">%.1f d</string>
+  <string name="fmt_period_n_d">%d d</string>
+  <string name="time_just_now">just now</string>
+  <string name="fmt_time_dur_ago">%s ago</string>
 </resources>

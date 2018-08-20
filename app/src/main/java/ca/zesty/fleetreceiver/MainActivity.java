@@ -503,7 +503,7 @@ public class MainActivity extends BaseActivity {
                 long minSinceReport = (System.currentTimeMillis() - lastReportMillis)/MINUTE;
                 long expectedIntervalMin = u.getIntPref(Prefs.EXPECTED_REPORTING_INTERVAL, 10);
                 u.setText(R.id.label_details,
-                    Utils.format("last report " + Utils.describeTime(p.timeMillis)),
+                    Utils.format("last report " + u.describeTime(p.timeMillis)),
                     minSinceReport > expectedIntervalMin ? 0xffe04020 : 0x8a000000);
                 if (gpsOutage) {
                     u.setText(R.id.speed, "no GPS", 0xffe04020);
@@ -513,7 +513,7 @@ public class MainActivity extends BaseActivity {
                     u.setText(R.id.speed, Utils.format("%.0f km/h", p.speedKmh), 0x8a000000);
                     u.setText(R.id.speed_details,
                         (p.isResting() ? "stopped" : "started") + " moving " +
-                            Utils.describeTime(lastTransitionMillis)
+                            u.describeTime(lastTransitionMillis)
                     );
                 }
             }
@@ -952,7 +952,7 @@ public class MainActivity extends BaseActivity {
                 if (selectedPt.distance(arrowHead) >= MIN_ARROW_LENGTH && selectedPoint.speedKmh >= MIN_ARROW_SPEED_KMH) {
                     drawArrowOutline(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, selectedArrowOutlinePaint, 2);
                     if (drawArrow(canvas, selectedPt, arrowHead, ARROW_TIP_SIZE, arrowPaint)) {
-                        String arrowLabel = "+" + Utils.describePeriod(arrowSeconds*1000, true);
+                        String arrowLabel = "+" + u.describePeriod(arrowSeconds*1000, true);
                         // Place above or below the arrowhead.
                         int ax = (int) arrowHead.x;
                         int ay = (int) arrowHead.y + (arrowHead.y > selectedPt.y ? 1 : -1)*(TEXT_HEIGHT/2 + PADDING) + TEXT_HEIGHT/2;
@@ -1063,7 +1063,7 @@ public class MainActivity extends BaseActivity {
                     ReporterEntity reporter = db.getReporterDao().getActive(reporterId);
                     if (reporter != null) {
                         String message = Utils.format("%s reported no GPS signal %s",
-                            reporter.label, Utils.describeTime(timeMillis));
+                            reporter.label, u.describeTime(timeMillis));
                         Toast.makeText(context, message, Toast.LENGTH_LONG).show();
                     }
                 } finally {
